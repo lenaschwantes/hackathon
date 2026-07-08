@@ -1,0 +1,200 @@
+[
+  {
+    "curso": "Técnico em Informática Integrado ao Ensino Médio",
+    "campus": "Florianópolis",
+    "cidade": "Florianópolis",
+    "modalidade": "presencial",
+    "nivel": "técnico integrado",
+    "forma_ingresso": "sorteio",
+    "inscricao_inicio": "2026-06-15",
+    "inscricao_fim": "2026-07-25",
+    "link_edital": "https://ifsc.edu.br/editais/2026-tecnico-integrado-informatica-florianopolis"
+  },
+  {
+    "curso": "Técnico em Enfermagem Subsequente",
+    "campus": "São José",
+    "cidade": "São José",
+    "modalidade": "presencial",
+    "nivel": "técnico subsequente",
+    "forma_ingresso": "ENEM",
+    "inscricao_inicio": "2026-08-01",
+    "inscricao_fim": "2026-08-20",
+    "link_edital": "https://ifsc.edu.br/editais/2026-tecnico-subsequente-enfermagem-sao-jose"
+  },
+  {
+    "curso": "Bacharelado em Sistemas de Informação",
+    "campus": "São José",
+    "cidade": "São José",
+    "modalidade": "presencial",
+    "nivel": "superior",
+    "forma_ingresso": "análise",
+    "inscricao_inicio": "2026-01-05",
+    "inscricao_fim": "2026-02-10",
+    "link_edital": "https://ifsc.edu.br/editais/2026-superior-sistemas-informacao-sao-jose"
+  },
+  {
+    "curso": "Licenciatura em Física",
+    "campus": "Joinville",
+    "cidade": "Joinville",
+    "modalidade": "presencial",
+    "nivel": "superior",
+    "forma_ingresso": "ENEM",
+    "inscricao_inicio": "2026-06-01",
+    "inscricao_fim": "2026-07-15",
+    "link_edital": "https://ifsc.edu.br/editais/2026-superior-licenciatura-fisica-joinville"
+  },
+  {
+    "curso": "Técnico em Mecânica Integrado ao Ensino Médio",
+    "campus": "Joinville",
+    "cidade": "Joinville",
+    "modalidade": "presencial",
+    "nivel": "técnico integrado",
+    "forma_ingresso": "sorteio",
+    "inscricao_inicio": "2026-09-01",
+    "inscricao_fim": "2026-09-20",
+    "link_edital": "https://ifsc.edu.br/editais/2026-tecnico-integrado-mecanica-joinville"
+  },
+  {
+    "curso": "Técnico em Alimentos Subsequente",
+    "campus": "Chapecó",
+    "cidade": "Chapecó",
+    "modalidade": "presencial",
+    "nivel": "técnico subsequente",
+    "forma_ingresso": "prova",
+    "inscricao_inicio": "2026-10-01",
+    "inscricao_fim": "2026-10-15",
+    "link_edital": "https://ifsc.edu.br/editais/2026-tecnico-subsequente-alimentos-chapeco"
+  },
+  {
+    "curso": "FIC Auxiliar Administrativo",
+    "campus": "Criciúma",
+    "cidade": "Criciúma",
+    "modalidade": "EAD",
+    "nivel": "FIC",
+    "forma_ingresso": "análise",
+    "inscricao_inicio": "2026-07-05",
+    "inscricao_fim": "2026-07-30",
+    "link_edital": "https://ifsc.edu.br/editais/2026-fic-auxiliar-administrativo-ead"
+  },
+  {
+    "curso": "Bacharelado em Engenharia Civil",
+    "campus": "Lages",
+    "cidade": "Lages",
+    "modalidade": "presencial",
+    "nivel": "superior",
+    "forma_ingresso": "análise",
+    "inscricao_inicio": "2026-08-10",
+    "inscricao_fim": "2026-08-25",
+    "link_edital": "https://ifsc.edu.br/editais/2026-superior-engenharia-civil-lages"
+  },
+  {
+    "curso": "Técnico em Eletromecânica Integrado ao Ensino Médio",
+    "campus": "Itajaí",
+    "cidade": "Itajaí",
+    "modalidade": "presencial",
+    "nivel": "técnico integrado",
+    "forma_ingresso": "ENEM",
+    "inscricao_inicio": "2026-06-20",
+    "inscricao_fim": "2026-07-10",
+    "link_edital": "https://ifsc.edu.br/editais/2026-tecnico-integrado-eletromecanica-itajai"
+  },
+  {
+    "curso": "Bacharelado em Administração",
+    "campus": "Araranguá",
+    "cidade": "Araranguá",
+    "modalidade": "presencial",
+    "nivel": "superior",
+    "forma_ingresso": "sorteio",
+    "inscricao_inicio": "2025-12-01",
+    "inscricao_fim": "2026-01-10",
+    "link_edital": "https://ifsc.edu.br/editais/2025-superior-administracao-ararangua"
+  },
+  {
+    "curso": "Técnico em Automação Industrial Integrado ao Ensino Médio",
+    "campus": "Gaspar",
+    "cidade": "Gaspar",
+    "modalidade": "presencial",
+    "nivel": "técnico integrado",
+    "forma_ingresso": "prova",
+    "inscricao_inicio": "2026-07-01",
+    "inscricao_fim": "2026-07-20",
+    "link_edital": "https://ifsc.edu.br/editais/2026-tecnico-integrado-automacao-gaspar"
+  },
+  {
+    "curso": "FIC Informática Básica",
+    "campus": "Canoinhas",
+    "cidade": "Canoinhas",
+    "modalidade": "presencial",
+    "nivel": "FIC",
+    "forma_ingresso": "análise",
+    "inscricao_inicio": "2026-07-15",
+    "inscricao_fim": "2026-07-25",
+    "link_edital": "https://ifsc.edu.br/editais/2026-fic-informatica-basica-canoinhas"
+  },
+  {
+    "curso": "Técnico em Agropecuária Subsequente",
+    "campus": "Caçador",
+    "cidade": "Caçador",
+    "modalidade": "presencial",
+    "nivel": "técnico subsequente",
+    "forma_ingresso": "ENEM",
+    "inscricao_inicio": "2026-06-25",
+    "inscricao_fim": "2026-08-01",
+    "link_edital": "https://ifsc.edu.br/editais/2026-tecnico-subsequente-agropecuaria-cacador"
+  },
+  {
+    "curso": "Licenciatura em Matemática",
+    "campus": "Xanxerê",
+    "cidade": "Xanxerê",
+    "modalidade": "presencial",
+    "nivel": "superior",
+    "forma_ingresso": "análise",
+    "inscricao_inicio": "2026-09-05",
+    "inscricao_fim": "2026-09-25",
+    "link_edital": "https://ifsc.edu.br/editais/2026-superior-licenciatura-matematica-xanxere"
+  },
+  {
+    "curso": "Técnico em Edificações Integrado ao Ensino Médio",
+    "campus": "Tubarão",
+    "cidade": "Tubarão",
+    "modalidade": "presencial",
+    "nivel": "técnico integrado",
+    "forma_ingresso": "sorteio",
+    "inscricao_inicio": "2026-07-01",
+    "inscricao_fim": "2026-07-15",
+    "link_edital": "https://ifsc.edu.br/editais/2026-tecnico-integrado-edificacoes-tubarao"
+  },
+  {
+    "curso": "FIC Libras Básico",
+    "campus": "Palhoça",
+    "cidade": "Palhoça",
+    "modalidade": "EAD",
+    "nivel": "FIC",
+    "forma_ingresso": "análise",
+    "inscricao_inicio": "2026-07-20",
+    "inscricao_fim": "2026-08-05",
+    "link_edital": "https://ifsc.edu.br/editais/2026-fic-libras-basico-ead"
+  },
+  {
+    "curso": "Bacharelado em Engenharia de Controle e Automação",
+    "campus": "São Miguel do Oeste",
+    "cidade": "São Miguel do Oeste",
+    "modalidade": "presencial",
+    "nivel": "superior",
+    "forma_ingresso": "ENEM",
+    "inscricao_inicio": "2026-11-01",
+    "inscricao_fim": "2026-11-20",
+    "link_edital": "https://ifsc.edu.br/editais/2026-superior-engenharia-controle-automacao-smo"
+  },
+  {
+    "curso": "Técnico em Vestuário Subsequente",
+    "campus": "Jaraguá do Sul - Centro",
+    "cidade": "Jaraguá do Sul",
+    "modalidade": "presencial",
+    "nivel": "técnico subsequente",
+    "forma_ingresso": "prova",
+    "inscricao_inicio": "2026-07-08",
+    "inscricao_fim": "2026-07-18",
+    "link_edital": "https://ifsc.edu.br/editais/2026-tecnico-subsequente-vestuario-jaragua-do-sul"
+  }
+]
