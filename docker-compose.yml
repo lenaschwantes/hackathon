@@ -1,0 +1,151 @@
+name: decifra
+
+services:
+  weaviate:
+    container_name: weaviate-${RAG_ENV:-decifra}
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --scheme
+      - http
+    image: cr.weaviate.io/semitechnologies/weaviate:1.28.2
+    environment:
+      QUERY_DEFAULTS: hybrid
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
+      PERSISTENCE_DATA_PATH: "/var/lib/weaviate"
+      ENABLE_API_BASED_MODULES: "true"
+      ENABLE_SINGLE_NODE: "true"
+      BACKUP_FILESYSTEM_PATH: "/var/lib/weaviate/backups"
+      # Confira se o embedding roda dentro do weaviate (huggingface) ou externo (voyage).
+      # Se for externo, troque para DEFAULT_VECTORIZER_MODULE: none e remova ENABLE_MODULES.
+      DEFAULT_VECTORIZER_MODULE: text2vec-huggingface
+      ENABLE_MODULES: text2vec-huggingface
+    ports:
+      - 8081:8080
+      - 50052:50051
+    volumes:
+      - weaviate-data:/var/lib/weaviate
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -q --spider --tries=1 http://localhost:8080/v1/.well-known/ready || exit 1" ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "1"
+    networks:
+      - decifra-network
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"   # painel de gerenciamento, util pra debugar no hackathon
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "1"
+    networks:
+      - decifra-network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - decifra-network
+
+  data-ingestion:
+    container_name: data-ingestion-${RAG_ENV:-decifra}
+    build:
+      context: ./data_ingestion
+      dockerfile: docker/Dockerfile
+    env_file:
+      - ./data_ingestion/.env
+    volumes:
+      # Fonte dos documentos agora e local, no lugar do storage remoto.
+      # Coloque os PDFs dos editais do IFSC em ./data/editais
+      - ./data/editais:/app/editais:ro
+    ports:
+      - "8210:8210"
+    depends_on:
+      - weaviate
+      - rabbitmq
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "1"
+    networks:
+      - decifra-network
+
+  data-ingestion-worker:
+    container_name: data-ingestion-worker-${RAG_ENV:-decifra}
+    build:
+      context: ./data_ingestion
+      dockerfile: docker/Dockerfile
+    env_file:
+      - ./data_ingestion/.env
+    volumes:
+      - ./data/editais:/app/editais:ro
+    command: celery -A src.worker.celery_app worker --loglevel=info --concurrency=2 -Q data_ingestion
+    depends_on:
+      - rabbitmq
+      - weaviate
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "1"
+    networks:
+      - decifra-network
+
+  rag:
+    container_name: rag-${RAG_ENV:-decifra}
+    build:
+      context: ./rag
+      dockerfile: docker/Dockerfile
+      args:
+        PROFILE: cpu
+    env_file:
+      - ./rag/.env
+    volumes:
+      - ./rag/:/app
+    ports:
+      - "8220:8220"
+    depends_on:
+      - weaviate
+      - rabbitmq
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "1"
+    networks:
+      - decifra-network
+
+  # Canal do Telegram. Descomente na Fase 3, quando o servico existir em ./channels.
+  # telegram-bot:
+  #   container_name: telegram-bot-${RAG_ENV:-decifra}
+  #   build:
+  #     context: ./channels
+  #     dockerfile: docker/Dockerfile
+  #   env_file:
+  #     - ./channels/.env   # TELEGRAM_BOT_TOKEN vai aqui
+  #   depends_on:
+  #     - rag
+  #     - redis
+  #   networks:
+  #     - decifra-network
+
+networks:
+  decifra-network:
+    driver: bridge
+
+volumes:
+  weaviate-data:
