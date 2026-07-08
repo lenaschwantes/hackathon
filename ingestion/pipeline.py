@@ -1,11 +1,8 @@
 """Pipeline de ingestão do Decifra.
 
-Fluxo: bytes do edital -> extração de texto -> limpeza -> deduplicação
-por hash -> gravação na camada raw do Weaviate.
-
-O passo de chunk + embed vive no serviço original de RAG e ainda não foi
-portado para cá. Veja o TODO ao final: é onde o time pluga
-``ingestion.chunking`` + ``ingestion.embeddings`` na Fase 0.
+Fluxo: bytes do edital -> extração -> limpeza -> deduplicação por hash ->
+grava o texto cru (proveniência) -> chunk -> embed (Voyage) -> insere os
+chunks vetorizados no Weaviate.
 """
 
 from __future__ import annotations
@@ -14,7 +11,9 @@ import logging
 
 from config.settings import settings
 from ingestion.clean import clean_text
+from ingestion.embeddings import VoyageEmbedding
 from ingestion.extract import extract_text
+from ingestion.simple_chunk import chunk_text
 from ingestion.weaviate_store import WeaviateStore
 from utils.hashing import sha256_bytes
 
@@ -22,12 +21,12 @@ logger = logging.getLogger(__name__)
 
 
 def raw_collection_name() -> str:
-    """Nome da coleção raw (ex.: ``Editais_raw``)."""
+    """Nome da coleção (ex.: ``Editais_raw``)."""
     return f"{settings.default_collection}{settings.raw_collection_suffix}"
 
 
 def ingest_document(file_name: str, content: bytes, store: WeaviateStore) -> dict:
-    """Ingere um único documento na camada raw.
+    """Ingere um único documento: texto cru + chunks vetorizados.
 
     Parameters
     ----------
@@ -36,12 +35,12 @@ def ingest_document(file_name: str, content: bytes, store: WeaviateStore) -> dic
     content : bytes
         Conteúdo binário do documento.
     store : WeaviateStore
-        Store já conectada à coleção raw.
+        Store já conectada à coleção.
 
     Returns
     -------
     dict
-        Resultado do upsert, ou um dict de status quando pulado.
+        Resultado do upsert, ou dict de status quando pulado.
     """
     file_hash = sha256_bytes(content)
 
@@ -68,12 +67,17 @@ def ingest_document(file_name: str, content: bytes, store: WeaviateStore) -> dic
         source_format=meta.get("source_format"),
         converted_from=meta.get("converted_from"),
     )
-    logger.info("Documento indexado: %s (%d chars)", file_name, len(text))
 
-    # TODO (Fase 0): chunk + embed + insert_chunks.
-    #   from ingestion.chunking import CustomHybridChunker
-    #   from ingestion.embeddings import VoyageEmbedding
-    #   chunks = CustomHybridChunker(...).chunk(dl_doc)   # precisa do DoclingDocument
-    #   vectors = VoyageEmbedding().embed([c.text for c in chunks])
-    #   store.insert_chunks(file_hash=file_hash, chunks=chunks, vectors=vectors)
+    chunks = chunk_text(text)
+    if chunks:
+        embedder = VoyageEmbedding(collection_name=store.collection_name)
+        vectors = embedder.Vectorize_documents(chunks)
+        store.insert_chunks(
+            file_name=file_name,
+            file_hash=file_hash,
+            chunks=chunks,
+            vectors=vectors,
+        )
+        logger.info("Indexados %d chunks: %s", len(chunks), file_name)
+
     return result

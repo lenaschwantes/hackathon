@@ -190,6 +190,11 @@ class WeaviateStore:
                             data_type=DataType.TEXT,
                             skip_vetorization=True,
                         ),
+                        Property(
+                            name="chunk_index",
+                            data_type=DataType.INT,
+                            skip_vetorization=True,
+                        ),
                     ],
                     vectorizer_config=[
                         Configure.NamedVectors.none(
@@ -498,7 +503,7 @@ class WeaviateStore:
                         "file_hash": file_hash,
                         "chunk_index": idx,
                     },
-                    vector=vec,
+                    vector={"content_vector": vec},
                     uuid=self._generate_chunk_uuid(file_hash, idx),
                 )
 
