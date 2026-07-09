@@ -74,6 +74,8 @@ para testar o canal sem depender do RAG.
 uv run pytest tests/ -q   # puros: não tocam Weaviate, Voyage nem Groq
 ```
 
+CI (`.github/workflows/ci.yml`) roda essa mesma suíte a cada push/PR em `main` — não precisa de nenhuma chave de API configurada como secret.
+
 ## Reaproveitamento
 
 O core de RAG vem de uma plataforma de produção. Os módulos de extração, limpeza, chunking, embedding e o store idempotente do Weaviate são reaproveitados; a fonte de documentos foi trocada de storage remoto para leitura de arquivo local, e a camada de canal e recomendação é nova.
