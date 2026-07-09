@@ -12,6 +12,7 @@ from telegram.ext import Application, ContextTypes, MessageHandler, filters
 
 from channels.base import ChannelAdapter
 from channels.engine import responder as fake_responder
+from channels.rate_limit import MENSAGEM_LIMITE_EXCEDIDO, permitido
 from channels.session import carregar_sessao, salvar_sessao
 
 
@@ -33,12 +34,16 @@ class TelegramAdapter(ChannelAdapter):
     async def _ao_receber(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
         Chamado a cada mensagem de texto recebida. Faz o ciclo
-        completo: carrega sessão -> chama o motor -> salva sessão
-        -> responde. Nenhuma lógica de negócio mora aqui, só a
-        orquestração entre sessão e motor.
+        completo: checa rate limit -> carrega sessão -> chama o motor
+        -> salva sessão -> responde. Nenhuma lógica de negócio mora
+        aqui, só a orquestração entre sessão e motor.
         """
         user_id = str(update.effective_user.id)
         texto = update.message.text
+
+        if not await permitido(user_id):
+            await update.message.reply_text(MENSAGEM_LIMITE_EXCEDIDO)
+            return
 
         sessao = await carregar_sessao(user_id)
         resposta = self._responder(user_id, texto, sessao)
