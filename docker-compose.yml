@@ -24,9 +24,9 @@ services:
       ENABLE_MODULES: text2vec-huggingface
     ports:
       - 8081:8080
-      - 50052:50051
+      - 50051:50051
     volumes:
-      - weaviate-data:/var/lib/weaviate
+      - weaviate-data-v2:/var/lib/weaviate
     healthcheck:
       test: [ "CMD-SHELL", "wget -q --spider --tries=1 http://localhost:8080/v1/.well-known/ready || exit 1" ]
       interval: 30s
@@ -148,4 +148,4 @@ networks:
     driver: bridge
 
 volumes:
-  weaviate-data:
+  weaviate-data-v2:
