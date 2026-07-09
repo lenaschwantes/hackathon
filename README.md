@@ -13,15 +13,21 @@ O perfil do cidadão alimenta dois motores separados, e eles não se misturam:
 
 Essa separação é o que garante fidelidade: o assistente nunca inventa prazo, e quando não há base no acervo, reconhece que não sabe em vez de chutar.
 
+Stack: embeddings com Voyage (`voyage-3`), geração com Groq (`llama-3.3-70b-versatile`, API compatível com OpenAI), store vetorial no Weaviate com busca híbrida (vetor + BM25).
+
 ## Estrutura
 
 ```
-config/            settings central (Weaviate, Voyage, chunking, retrieval)
+config/            settings central (Weaviate, Voyage, Groq, chunking, retrieval)
 ingestion/         extração, limpeza, chunking, embedding e store no Weaviate
-retrieval/         busca híbrida (vetor + BM25)
+retrieval/         busca híbrida (vetor + BM25) + geração ancorada via Groq
+recommend/         motor estruturado: filtro de oportunidades por perfil
 utils/             hashing e validação
+tests/             testes puros (rodam sem infra e sem chaves de API)
 data/editais/      PDFs dos editais do IFSC (não versionados)
+data/opportunities.json  tabela estruturada de cursos/prazos
 run_ingest.py      CLI: percorre os editais e indexa
+ask.py             CLI: pergunta -> resposta ancorada citando o edital
 docker-compose.yml weaviate + rabbitmq + redis
 ```
 
@@ -32,7 +38,24 @@ cp .env.example .env      # preencha VOYAGE_API_KEY e GROQ_API_KEY
 docker compose up -d weaviate rabbitmq redis
 uv sync                   # ou pip install -e .
 # coloque os PDFs em data/editais/
-python run_ingest.py
+uv run python run_ingest.py
+uv run python ask.py "como faço a inscrição no Sisu 2026?"
+```
+
+Rodando fora do docker (do host), aponte para as portas mapeadas no compose:
+
+```bash
+# no .env:
+WEAVIATE_HTTP_URL=http://localhost:8081
+WEAVIATE_GRPC_PORT=50052
+```
+
+PDFs são extraídos via LibreOffice quando disponível; sem ele, cai no fallback pypdf automaticamente.
+
+## Testes
+
+```bash
+uv run pytest tests/ -q   # puros: não tocam Weaviate, Voyage nem Groq
 ```
 
 ## Reaproveitamento
@@ -41,8 +64,8 @@ O core de RAG vem de uma plataforma de produção. Os módulos de extração, li
 
 ## Próximos passos (fases da PoC)
 
-- [ ] Fase 0: portar chunk + embed no `pipeline.py` (marcado com TODO) e validar o retrieval no primeiro edital
-- [ ] Fase 1: tabela estruturada de oportunidades (`data/opportunities.json`) + filtro geo e temporal
+- [x] Fase 0: chunk + embed no `pipeline.py` e retrieval validado de ponta a ponta nos primeiros editais
+- [x] Fase 1: tabela estruturada de oportunidades (`data/opportunities.json`) + filtro geo e temporal (`recommend/`)
 - [ ] Fase 2: diálogo de perfil (structured output) + prompt de redação acessível
 - [ ] Fase 3: canal do Telegram + sessão no Redis
 - [ ] Fase 4: orquestração dos dois motores + testes de recusa
