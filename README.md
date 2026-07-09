@@ -22,12 +22,14 @@ config/            settings central (Weaviate, Voyage, Groq, chunking, retrieval
 ingestion/         extração, limpeza, chunking, embedding e store no Weaviate
 retrieval/         busca híbrida (vetor + BM25) + geração ancorada via Groq
 recommend/         motor estruturado: filtro de oportunidades por perfil
+channels/          adaptadores de canal (Telegram) + sessão no Redis + engine.py (liga o canal ao RAG)
 utils/             hashing e validação
 tests/             testes puros (rodam sem infra e sem chaves de API)
 data/editais/      PDFs dos editais do IFSC (não versionados)
 data/opportunities.json  tabela estruturada de cursos/prazos
 run_ingest.py      CLI: percorre os editais e indexa
 ask.py             CLI: pergunta -> resposta ancorada citando o edital
+run_bot.py         sobe o bot do Telegram
 docker-compose.yml weaviate + rabbitmq + redis
 ```
 
@@ -52,6 +54,20 @@ WEAVIATE_GRPC_PORT=50052
 
 PDFs são extraídos via LibreOffice quando disponível; sem ele, cai no fallback pypdf automaticamente.
 
+### Bot do Telegram
+
+```bash
+# no .env, além de VOYAGE_API_KEY e GROQ_API_KEY:
+TELEGRAM_BOT_TOKEN=<token do @BotFather>
+
+docker compose up -d redis   # sessão de conversa fica no Redis
+uv run python run_bot.py
+```
+
+`channels/engine.py` é o adaptador que liga o canal ao RAG de verdade
+(`retrieval/generate.py`); `channels/fake_engine.py` continua no repo só
+para testar o canal sem depender do RAG.
+
 ## Testes
 
 ```bash
@@ -67,5 +83,5 @@ O core de RAG vem de uma plataforma de produção. Os módulos de extração, li
 - [x] Fase 0: chunk + embed no `pipeline.py` e retrieval validado de ponta a ponta nos primeiros editais
 - [x] Fase 1: tabela estruturada de oportunidades (`data/opportunities.json`) + filtro geo e temporal (`recommend/`)
 - [ ] Fase 2: diálogo de perfil (structured output) + prompt de redação acessível
-- [ ] Fase 3: canal do Telegram + sessão no Redis
+- [x] Fase 3: canal do Telegram + sessão no Redis + ligação ao RAG real (`channels/engine.py`)
 - [ ] Fase 4: orquestração dos dois motores + testes de recusa
