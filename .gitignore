@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Segredos e ambiente (em qualquer nível: rag/.env, channels/.env, ...)
+.env
+
+# Dados locais — PDFs dos editais não são versionados (ver README)
+data/editais/
