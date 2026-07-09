@@ -9,7 +9,6 @@ from config.settings import settings
 
 sleep_time = 0.5
 VOYAGE_MODEL = settings.voyage_model
-ANTHROPIC_MODEL = settings.anthropic_model
 VOYAGE_API_KEY = settings.voyage_api_key
 
 batch_valor = 100

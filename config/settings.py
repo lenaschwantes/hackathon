@@ -23,9 +23,9 @@ class Settings(BaseSettings):
     voyage_model: str = "voyage-3"
     voyage_api_key: str = ""
 
-    # LLM (Anthropic)
-    anthropic_model: str = "claude-haiku-4-5-20251001"
-    anthropic_api_key: str = ""
+    # LLM (Groq)
+    groq_api_key: str = ""
+    groq_model: str = "llama-3.3-70b-versatile"
 
     # Broker (opcional, para ingestão assíncrona via Celery)
     rabbitmq_url: str = "amqp://guest:guest@rabbitmq:5672//"

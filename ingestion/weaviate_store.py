@@ -80,14 +80,9 @@ class WeaviateStore:
     def _connect(self) -> weaviate.client.WeaviateClient:
         port = urlparse(settings.weaviate_http_url).port or 8080
 
-        headers = {}
-        if settings.anthropic_api_key:
-            headers["X-Anthropic-Api-Key"] = settings.anthropic_api_key
-
         return weaviate.connect_to_local(
             host=self._host,
             port=port,
-            headers=headers or None,
             additional_config=init.AdditionalConfig(
                 timeout=init.Timeout(init=60),
             ),

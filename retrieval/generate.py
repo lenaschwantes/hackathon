@@ -8,7 +8,10 @@ fidelidade da banca.
 
 from __future__ import annotations
 
-import anthropic
+import time
+
+import openai
+from openai import OpenAI
 
 from config.settings import settings
 from retrieval.search import hybrid_search
@@ -51,18 +54,30 @@ def answer(question: str, k: int | None = None) -> dict:
     contexto = "\n\n".join(
         f"[Fonte: {h['file_name']}]\n{h['text']}" for h in hits
     )
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-    msg = client.messages.create(
-        model=settings.anthropic_model,
-        max_tokens=1000,
-        system=SYSTEM,
-        messages=[
-            {
-                "role": "user",
-                "content": f"Trechos dos editais:\n{contexto}\n\nPergunta: {question}",
-            }
-        ],
-    )
-    text = "".join(b.text for b in msg.content if b.type == "text")
+    client = OpenAI(api_key=settings.groq_api_key, base_url="https://api.groq.com/openai/v1")
+
+    delays = (2, 4, 8)
+    for attempt, delay in enumerate((0, *delays)):
+        if delay:
+            time.sleep(delay)
+        try:
+            msg = client.chat.completions.create(
+                model=settings.groq_model,
+                max_tokens=1000,
+                messages=[
+                    {"role": "system", "content": SYSTEM},
+                    {
+                        "role": "user",
+                        "content": f"Trechos dos editais:\n{contexto}\n\nPergunta: {question}",
+                    },
+                ],
+            )
+            break
+        except openai.RateLimitError:
+            if attempt == len(delays):
+                raise
+            continue
+
+    text = msg.choices[0].message.content
     sources = sorted({h["file_name"] for h in hits if h["file_name"]})
     return {"answer": text, "sources": sources}

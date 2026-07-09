@@ -28,7 +28,7 @@ docker-compose.yml weaviate + rabbitmq + redis
 ## Como rodar
 
 ```bash
-cp .env.example .env      # preencha VOYAGE_API_KEY e ANTHROPIC_API_KEY
+cp .env.example .env      # preencha VOYAGE_API_KEY e GROQ_API_KEY
 docker compose up -d weaviate rabbitmq redis
 uv sync                   # ou pip install -e .
 # coloque os PDFs em data/editais/
