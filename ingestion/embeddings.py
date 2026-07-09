@@ -38,7 +38,9 @@ class VoyageEmbedding:
         """
         self.client = self.get_voyage_client()
         self.collection_name = collection_name
-        self.embedding_function = VoyageAIEmbeddings(model=embedding_model)
+        self.embedding_function = VoyageAIEmbeddings(
+            model=embedding_model, api_key=VOYAGE_API_KEY
+        )
         self.embedding_model = embedding_model
 
     def close_voyage(self):

@@ -10,6 +10,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     # Weaviate
     weaviate_http_url: str = "http://weaviate:8080"
+    weaviate_grpc_port: int = 50051
     raw_collection_suffix: str = "_raw"
     default_collection: str = "Editais"
 

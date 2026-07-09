@@ -83,6 +83,7 @@ class WeaviateStore:
         return weaviate.connect_to_local(
             host=self._host,
             port=port,
+            grpc_port=settings.weaviate_grpc_port,
             additional_config=init.AdditionalConfig(
                 timeout=init.Timeout(init=60),
             ),

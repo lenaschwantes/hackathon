@@ -27,7 +27,25 @@ def extract_text(filename: str, content: bytes) -> tuple[str, dict]:
     - PDF (and other office types): converted to DOCX first, then processed as DOCX.
     """
     suffix = assert_allowed_filename(filename)
-    docx_content, normalize_meta = _to_docx_bytes(filename, content, suffix)
+    try:
+        docx_content, normalize_meta = _to_docx_bytes(filename, content, suffix)
+    except Exception as exc:
+        if suffix == ".pdf":
+            logger.warning(
+                "DOCX conversion failed for %s, falling back to PDF text extraction: %s",
+                filename,
+                exc,
+            )
+            text, extract_meta = _extract_from_pdf(content)
+            extract_meta["extractor"] = "pdf_fallback"
+            extract_meta["docx_error"] = str(exc)[:500]
+            return text, {
+                "source_format": "pdf",
+                "normalized_format": "pdf",
+                "converted_from": None,
+                **extract_meta,
+            }
+        raise
 
     try:
         text, extract_meta = _extract_from_docx(docx_content)

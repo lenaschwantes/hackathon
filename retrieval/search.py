@@ -7,6 +7,8 @@ nomeado ``content_vector``. Defaults do projeto original: alpha=0.6, k=12.
 
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
 import weaviate
 from weaviate.classes.query import MetadataQuery
 
@@ -15,7 +17,7 @@ from ingestion.embeddings import VoyageEmbedding
 
 
 def _host() -> str:
-    return settings.weaviate_http_url.split("//")[-1].split(":")[0]
+    return urlparse(settings.weaviate_http_url).hostname or "weaviate"
 
 
 def hybrid_search(
@@ -51,7 +53,11 @@ def hybrid_search(
     embedder = VoyageEmbedding(collection_name=collection)
     query_vector = embedder.Vectorize_documents([query])[0]
 
-    client = weaviate.connect_to_local(host=_host())
+    client = weaviate.connect_to_local(
+        host=_host(),
+        port=urlparse(settings.weaviate_http_url).port or 8080,
+        grpc_port=settings.weaviate_grpc_port,
+    )
     try:
         coll = client.collections.get(collection)
         response = coll.query.hybrid(
