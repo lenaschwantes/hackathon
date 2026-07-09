@@ -11,7 +11,7 @@ from telegram import Update
 from telegram.ext import Application, ContextTypes, MessageHandler, filters
 
 from channels.base import ChannelAdapter
-from channels.fake_engine import responder as fake_responder
+from channels.engine import responder as fake_responder
 from channels.session import carregar_sessao, salvar_sessao
 
 
