@@ -25,7 +25,15 @@ def raw_collection_name() -> str:
     return f"{settings.default_collection}{settings.raw_collection_suffix}"
 
 
-def ingest_document(file_name: str, content: bytes, store: WeaviateStore) -> dict:
+def ingest_document(
+    file_name: str,
+    content: bytes,
+    store: WeaviateStore,
+    *,
+    bucket: str = "local",
+    storage_path: str | None = None,
+    status: str | None = None,
+) -> dict:
     """Ingere um único documento: texto cru + chunks vetorizados.
 
     Parameters
@@ -36,6 +44,12 @@ def ingest_document(file_name: str, content: bytes, store: WeaviateStore) -> dic
         Conteúdo binário do documento.
     store : WeaviateStore
         Store já conectada à coleção.
+    bucket : str, optional
+        Origem do documento (ex.: ``"local"``, ``"ifsc_site"``).
+    storage_path : str, optional
+        Caminho/URL de origem, para proveniência. Default: ``file_name``.
+    status : str, optional
+        ``"aberto"`` ou ``"encerrado"``, quando a fonte informar.
 
     Returns
     -------
@@ -59,13 +73,14 @@ def ingest_document(file_name: str, content: bytes, store: WeaviateStore) -> dic
         content=text,
         file_name=file_name,
         file_hash=file_hash,
-        bucket="local",
-        storage_path=file_name,
+        bucket=bucket,
+        storage_path=storage_path or file_name,
         content_type=meta.get("content_type"),
         text_chars=len(text),
         extractor=meta.get("extractor", "unknown"),
         source_format=meta.get("source_format"),
         converted_from=meta.get("converted_from"),
+        status=status,
     )
 
     chunks = chunk_text(text)

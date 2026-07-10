@@ -17,6 +17,7 @@ dependencies = [
     "openai>=1.40",
     "python-telegram-bot>=22.8",
     "redis>=8.0.1",
+    "beautifulsoup4>=4.15.0",
 ]
 
 [tool.ruff]

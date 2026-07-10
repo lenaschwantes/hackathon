@@ -191,6 +191,11 @@ class WeaviateStore:
                             data_type=DataType.INT,
                             skip_vetorization=True,
                         ),
+                        Property(
+                            name="status",
+                            data_type=DataType.TEXT,
+                            skip_vetorization=True,
+                        ),
                     ],
                     vectorizer_config=[
                         Configure.NamedVectors.none(
@@ -203,7 +208,23 @@ class WeaviateStore:
                 # condição de corrida: outro worker criou a coleção entre o exists() e o create()
                 if "already exists" not in str(e).lower():
                     raise
-        return self.client.collections.get(self.collection_name)
+        collection = self.client.collections.get(self.collection_name)
+        self._ensure_status_property(collection)
+        return collection
+
+    def _ensure_status_property(self, collection) -> None:
+        """Migração não-destrutiva: adiciona `status` a coleções criadas
+        antes desse campo existir, sem precisar recriar a coleção."""
+        existentes = {p.name for p in collection.config.get().properties}
+        if "status" in existentes:
+            return
+        try:
+            collection.config.add_property(
+                Property(name="status", data_type=DataType.TEXT, skip_vetorization=True)
+            )
+        except Exception as e:
+            if "already exists" not in str(e).lower():
+                raise
 
     def find_by_file_hash(self, file_hash: str) -> dict | None:
         """Busca documento existente por hash.
@@ -290,6 +311,74 @@ class WeaviateStore:
         content = items[0].get("content")
         return content if isinstance(content, str) else None
 
+    def find_by_storage_path(self, storage_path: str) -> dict | None:
+        """Busca documento existente por `storage_path` (URL ou caminho de origem).
+
+        Usado pela descoberta incremental pra saber se um edital já foi
+        processado sem precisar baixar o conteúdo de novo.
+
+        Parameters
+        ----------
+        storage_path : str
+            Caminho/URL de origem do documento.
+
+        Returns
+        -------
+        dict or None
+            ``{'uuid': str, 'properties': dict}`` ou ``None`` se ausente.
+        """
+        if self._use_rest:
+            return self._rest_find_by_storage_path(storage_path)
+
+        collection = self.get_or_create_collection()
+        result = collection.query.fetch_objects(
+            filters=Filter.by_property("storage_path").equal(storage_path),
+            limit=1,
+        )
+        if not result.objects:
+            return None
+        obj = result.objects[0]
+        return {
+            "uuid": str(obj.uuid),
+            "properties": dict(obj.properties or {}),
+        }
+
+    def _rest_find_by_storage_path(self, storage_path: str) -> dict | None:
+        self._ensure_remote_collection()
+        safe_path = json.dumps(storage_path)
+        query = f"""
+        {{
+          Get {{
+            {self._class_name}(
+              where: {{ path: ["storage_path"], operator: Equal, valueText: {safe_path} }}
+              limit: 1
+            ) {{
+              storage_path
+              _additional {{ id }}
+            }}
+          }}
+        }}
+        """
+        payload = self._rest_request(
+            "POST", "/v1/graphql", json={"query": query}
+        ).json()
+        items = (
+            payload.get("data", {})
+            .get("Get", {})
+            .get(self._class_name, [])
+            or []
+        )
+        if not items:
+            return None
+        item = items[0]
+        obj_id = item.get("_additional", {}).get("id")
+        return {
+            "uuid": obj_id,
+            "properties": {
+                k: v for k, v in item.items() if k != "_additional"
+            },
+        }
+
     def find_duplicate_by_file_hash(self, file_hash: str) -> dict | None:
         """Retorna documento se o hash já foi ingerido (raw_ready ou indexed).
 
@@ -364,6 +453,7 @@ class WeaviateStore:
         extractor: str,
         source_format: str | None,
         converted_from: str | None,
+        status: str | None = None,
     ) -> dict:
         """Insere ou atualiza documento no Weaviate.
 
@@ -389,6 +479,8 @@ class WeaviateStore:
             Formato de origem detectado.
         converted_from : str or None
             Formato convertido antes da extração.
+        status : str or None
+            ``"aberto"`` ou ``"encerrado"``, quando a fonte informar.
 
         Returns
         -------
@@ -420,6 +512,7 @@ class WeaviateStore:
             "text_chars": text_chars,
             "pipeline_status": PIPELINE_STATUS_RAW_READY,
             "ingested_at": ingested_at,
+            "status": status or "",
         }
 
         if self._use_rest:
@@ -492,6 +585,8 @@ class WeaviateStore:
 
         with collection.batch.dynamic() as batch:
             for idx, (text, vec) in enumerate(zip(chunks, vectors, strict=True)):
+                # posição 0 é reservada pro registro-documento (upsert_document);
+                # chunks começam em 1 pra não colidir e sobrescrevê-lo.
                 batch.add_object(
                     properties={
                         "content": text,
@@ -500,7 +595,7 @@ class WeaviateStore:
                         "chunk_index": idx,
                     },
                     vector={"content_vector": vec},
-                    uuid=self._generate_chunk_uuid(file_hash, idx),
+                    uuid=self._generate_chunk_uuid(file_hash, idx + 1),
                 )
 
     def _generate_chunk_uuid(self, file_hash: str, position: int) -> str:

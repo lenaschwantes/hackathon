@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     rabbitmq_url: str = "amqp://guest:guest@rabbitmq:5672//"
     celery_queue: str = "data_ingestion"
 
+    # Ingestão automática (crawler de editais do IFSC)
+    auto_ingest_ciclo_segundos: int = 60 * 60 * 24  # diário
+
     # Retrieval híbrido
     search_k: int = 12
     search_alpha: float = 0.6
