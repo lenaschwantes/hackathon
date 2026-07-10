@@ -20,6 +20,7 @@ Stack: embeddings com Voyage (`voyage-3`), geração com Groq (`llama-3.3-70b-ve
 ```
 config/            settings central (Weaviate, Voyage, Groq, chunking, retrieval)
 ingestion/         extração, limpeza, chunking, embedding e store no Weaviate
+ingestion/sources/ fontes de editais (crawler do site do IFSC, pasta local, fallback)
 retrieval/         busca híbrida (vetor + BM25) + geração ancorada via Groq
 recommend/         motor estruturado: filtro de oportunidades por perfil
 channels/          adaptadores de canal (Telegram) + sessão no Redis + engine.py (liga o canal ao RAG)
@@ -27,7 +28,8 @@ utils/             hashing e validação
 tests/             testes puros (rodam sem infra e sem chaves de API)
 data/editais/      PDFs dos editais do IFSC (não versionados)
 data/opportunities.json  tabela estruturada de cursos/prazos
-run_ingest.py      CLI: percorre os editais e indexa
+run_ingest.py      CLI: percorre a pasta local e indexa (ingestão manual)
+run_auto_ingest.py CLI: descobre editais no site do IFSC e indexa (ingestão automática)
 ask.py             CLI: pergunta -> resposta ancorada citando o edital
 run_bot.py         sobe o bot do Telegram
 docker-compose.yml weaviate + rabbitmq + redis
@@ -54,6 +56,26 @@ WEAVIATE_GRPC_PORT=50052
 
 PDFs são extraídos via LibreOffice quando disponível; sem ele, cai no fallback pypdf automaticamente.
 
+### Ingestão automática (crawler do IFSC)
+
+```bash
+uv run python run_auto_ingest.py            # roda um ciclo e termina
+uv run python run_auto_ingest.py --loop     # roda continuamente (intervalo em
+                                             # settings.auto_ingest_ciclo_segundos,
+                                             # default diário)
+```
+
+Descobre editais nas páginas públicas do IFSC (`editais-com-inscricoes-abertas`
+e `-encerradas`), captura o status de onde cada um foi listado (nunca infere
+por data) e ingere só os que ainda não foram processados (detecção
+incremental por `storage_path`). A fonte HTML fica isolada atrás da
+interface `EditalSource` (`ingestion/sources/base.py`) — se o site mudar de
+estrutura ou cair, `FallbackEditalSource` cai automaticamente pra
+`LocalFolderSource` (a mesma pasta local de sempre), sem tocar no pipeline.
+Cada edital é processado isoladamente: falha em um (download quebrado, PDF
+corrompido) tem retry com backoff exponencial (até 3x) e não derruba os
+outros — na última falha vira um "dead-letter" no log.
+
 ### Bot do Telegram
 
 ```bash
@@ -66,7 +88,9 @@ uv run python run_bot.py
 
 `channels/engine.py` é o adaptador que liga o canal ao RAG de verdade
 (`retrieval/generate.py`); `channels/fake_engine.py` continua no repo só
-para testar o canal sem depender do RAG.
+para testar o canal sem depender do RAG. `channels/rate_limit.py` limita
+10 mensagens por usuário a cada 60s (contador no Redis) — protege as
+chamadas pagas ao Groq/Voyage de flood.
 
 ## Testes
 
@@ -87,3 +111,9 @@ O core de RAG vem de uma plataforma de produção. Os módulos de extração, li
 - [ ] Fase 2: diálogo de perfil (structured output) + prompt de redação acessível
 - [x] Fase 3: canal do Telegram + sessão no Redis + ligação ao RAG real (`channels/engine.py`)
 - [ ] Fase 4: orquestração dos dois motores + testes de recusa
+
+## Diferenciais (além das fases obrigatórias)
+
+- **CI** (`.github/workflows/ci.yml`): roda a suíte de testes puros a cada push/PR.
+- **Rate limiting** (`channels/rate_limit.py`): protege as chamadas pagas ao Groq/Voyage de flood por usuário.
+- **Ingestão automática** (`ingestion/sources/`, `run_auto_ingest.py`): acaba com a inserção manual de editais, com fonte HTML isolada do pipeline e fallback pra pasta local.
