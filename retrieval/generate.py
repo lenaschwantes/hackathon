@@ -31,6 +31,55 @@ _SEM_BASE = (
     "Recomendo confirmar direto no site oficial do IFSC (ifsc.edu.br)."
 )
 
+_MAX_SOURCES = 2
+
+# Frases que o SYSTEM prompt instrui o modelo a usar quando a resposta não
+# está ancorada nos trechos (recusa) — usado só pra decidir se a fonte deve
+# aparecer, não altera o texto da resposta em si.
+_MARCADORES_RECUSA = (
+    "não encontrei essa informação",
+    "não encontrei informações",
+    "não encontrei nenhuma informação",
+    "não há essa informação",
+    "não há informações",
+    "não tenho essa informação",
+    "não tenho informações",
+    "não consta essa informação",
+    "confirmar no edital oficial",
+    "confirme no edital oficial",
+    "confirmar direto no site oficial",
+    "não está claro",
+    "não ficou claro",
+    "pergunta não está clara",
+    "não há uma pergunta clara",
+    "não há nenhuma pergunta clara",
+)
+
+
+def _eh_recusa(texto: str) -> bool:
+    """Heurística: a resposta soa como recusa (não se ancorou nos trechos)?"""
+    texto_lower = (texto or "").lower()
+    return any(marcador in texto_lower for marcador in _MARCADORES_RECUSA)
+
+
+def _fontes_relevantes(hits: list[dict], texto: str) -> list[str]:
+    """Nomes de arquivo dos editais realmente citáveis nesta resposta.
+
+    Vazio em recusas. Preserva a ordem de relevância de `hits` (não
+    reordena alfabeticamente) e limita a `_MAX_SOURCES`.
+    """
+    if _eh_recusa(texto):
+        return []
+
+    vistos: list[str] = []
+    for hit in hits:
+        nome = hit.get("file_name")
+        if nome and nome not in vistos:
+            vistos.append(nome)
+        if len(vistos) == _MAX_SOURCES:
+            break
+    return vistos
+
 
 def answer(question: str, k: int | None = None) -> dict:
     """Responde a pergunta ancorada nos editais.
@@ -79,5 +128,5 @@ def answer(question: str, k: int | None = None) -> dict:
             continue
 
     text = msg.choices[0].message.content
-    sources = sorted({h["file_name"] for h in hits if h["file_name"]})
+    sources = _fontes_relevantes(hits, text)
     return {"answer": text, "sources": sources}
