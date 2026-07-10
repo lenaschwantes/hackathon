@@ -10,7 +10,7 @@ from __future__ import annotations
 from urllib.parse import urlparse
 
 import weaviate
-from weaviate.classes.query import MetadataQuery
+from weaviate.classes.query import Filter, MetadataQuery
 
 from config.settings import settings
 from ingestion.embeddings import VoyageEmbedding
@@ -66,6 +66,12 @@ def hybrid_search(
             target_vector="content_vector",
             alpha=alpha,
             limit=k,
+            # exclui o registro-documento (texto bruto inteiro, sem
+            # chunk_index) da coleção raw — só chunks de verdade têm
+            # chunk_index setado. Sem esse filtro, o texto inteiro do
+            # PDF pode entrar no contexto e estourar o limite de
+            # tokens do LLM.
+            filters=Filter.by_property("chunk_index").greater_or_equal(0),
             return_metadata=MetadataQuery(score=True),
         )
         return [
