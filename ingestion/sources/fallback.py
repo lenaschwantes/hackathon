@@ -27,10 +27,11 @@ class FallbackEditalSource(EditalSource):
                 "Fonte primária (%s) OK: %d editais", type(self._primaria).__name__, len(refs)
             )
             return refs
-        except Exception:
-            logger.exception(
-                "Fonte primária (%s) falhou, caindo para fallback (%s)",
+        except Exception as exc:
+            logger.error(
+                "Fonte primária (%s) falhou (%s), caindo para fallback (%s)",
                 type(self._primaria).__name__,
+                type(exc).__name__,
                 type(self._fallback).__name__,
             )
             return self._fallback.list_editais()

@@ -158,5 +158,7 @@ class VoyageEmbedding:
             return all_embeddings
 
         except Exception as e:
-            logger.exception("Critical error vectorizing documents.")
+            # Só o tipo da exceção -- a mensagem pode embutir uma credencial
+            # vinda do cliente HTTP da Voyage (ex: header de Authorization).
+            logger.error("Critical error vectorizing documents (%s).", type(e).__name__)
             raise e

@@ -67,8 +67,8 @@ class IFSCCrawler(EditalSource):
                 time.sleep(self._pausa_segundos)
             try:
                 html = self._fetch(url)
-            except Exception:
-                logger.exception("Falha ao buscar página de editais: %s", url)
+            except Exception as exc:
+                logger.error("Falha ao buscar página de editais: %s (%s)", url, type(exc).__name__)
                 continue
             paginas_ok += 1
             refs.extend(self._parse_pagina(html, status, base_url=url))
@@ -96,8 +96,8 @@ class IFSCCrawler(EditalSource):
         for link in soup.find_all("a"):
             try:
                 ref = self._parse_link(link, status, base_url)
-            except Exception:
-                logger.exception("Item de edital malformado, pulando")
+            except Exception as exc:
+                logger.error("Item de edital malformado, pulando (%s)", type(exc).__name__)
                 continue
             if ref is not None:
                 refs.append(ref)
