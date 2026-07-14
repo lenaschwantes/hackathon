@@ -13,6 +13,8 @@ O perfil do cidadão alimenta dois motores separados, e eles não se misturam:
 
 Essa separação é o que garante fidelidade: o assistente nunca inventa prazo, e quando não há base no acervo, reconhece que não sabe em vez de chutar.
 
+`channels/engine.py` orquestra os dois: assim que o perfil fica completo, chama a Recomendação (`dialogue/recommendation.py` -> `recommend/opportunities.py`); mensagens seguintes, com o perfil já completo, seguem para a Tradução (RAG). Um motor nunca redige com dado do outro.
+
 Stack: embeddings com Voyage (`voyage-3`), geração com Groq (`llama-3.3-70b-versatile`, API compatível com OpenAI), store vetorial no Weaviate com busca híbrida (vetor + BM25).
 
 ## Estrutura
@@ -108,9 +110,9 @@ O core de RAG vem de uma plataforma de produção. Os módulos de extração, li
 
 - [x] Fase 0: chunk + embed no `pipeline.py` e retrieval validado de ponta a ponta nos primeiros editais
 - [x] Fase 1: tabela estruturada de oportunidades (`data/opportunities.json`) + filtro geo e temporal (`recommend/`)
-- [ ] Fase 2: diálogo de perfil (structured output) + prompt de redação acessível
+- [x] Fase 2: diálogo de perfil (structured output) + prompt de redação acessível
 - [x] Fase 3: canal do Telegram + sessão no Redis + ligação ao RAG real (`channels/engine.py`)
-- [ ] Fase 4: orquestração dos dois motores + testes de recusa
+- [x] Fase 4: orquestração dos dois motores + testes de recusa
 
 ## Diferenciais (além das fases obrigatórias)
 

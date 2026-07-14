@@ -15,6 +15,7 @@ from openai import OpenAI
 
 from dialogue.profile import Perfil, determinar_fase, extrair_perfil
 from dialogue.prompts import PROMPT_COLETA
+from dialogue.recommendation import gerar_recomendacao
 from retrieval.generate import answer
 
 logger = logging.getLogger(__name__)
@@ -93,8 +94,10 @@ def responder(user_id: str, texto: str, sessao: dict) -> str:
     Se o perfil ainda não estiver completo, extrai o que der da
     mensagem, atualiza a sessão (in-place -- quem chama esta função
     é responsável por persistir a sessão de volta no Redis) e
-    devolve a próxima pergunta de coleta. Só chama o RAG quando o
-    perfil já estiver completo.
+    devolve a próxima pergunta de coleta. Quando o perfil acaba de
+    ficar completo neste turno, devolve a recomendação do motor
+    estruturado (`recommend/opportunities.py`) em vez do RAG. Só cai
+    no RAG quando o perfil já estava completo antes desta mensagem.
     """
     perfil_atual = sessao.get("perfil") or {}
     perfil = Perfil(**perfil_atual)
@@ -110,7 +113,12 @@ def responder(user_id: str, texto: str, sessao: dict) -> str:
             except Exception:
                 logger.exception("Falha ao gerar pergunta de coleta para user_id=%s", user_id)
                 return _MENSAGEM_FALLBACK
-        # se acabou de completar, cai direto pro RAG abaixo, na mesma resposta
+
+        try:
+            return gerar_recomendacao(perfil)
+        except Exception:
+            logger.exception("Falha ao gerar recomendação para user_id=%s", user_id)
+            return _MENSAGEM_FALLBACK
 
     try:
         resultado = answer(texto)
