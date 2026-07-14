@@ -28,7 +28,7 @@ def _get_redis() -> Redis:
     """
     global _redis
     if _redis is None:
-        url = os.environ.get("REDIS_URL", "redis://localhost:6379")
+        url = os.environ.get("REDIS_URL", "redis://localhost:6380")
         _redis = Redis.from_url(url, decode_responses=True)
     return _redis
 

@@ -2,15 +2,19 @@
 Motor de resposta real, ligando o canal ao RAG.
 
 Este arquivo é o único adaptador entre um canal (Telegram, etc) e o
-motor de verdade (`retrieval.generate.answer`). Nenhuma lógica de
-negócio de RAG mora aqui — só a formatação da resposta e a proteção
-contra erros vazando pro usuário final.
+motor de verdade (`retrieval.generate.answer`). Antes de chamar o RAG,
+verifica se o perfil da pessoa já está completo -- se não estiver,
+conduz a coleta de perfil em vez de responder com o RAG.
 """
 
 import logging
 import os
 import re
 
+from openai import OpenAI
+
+from dialogue.profile import Perfil, determinar_fase, extrair_perfil
+from dialogue.prompts import PROMPT_COLETA
 from retrieval.generate import answer
 
 logger = logging.getLogger(__name__)
@@ -41,8 +45,6 @@ def _rotulo_fonte(file_name: str) -> str:
         raiz, ext = os.path.splitext(nome)
 
     if "_" in nome:
-        # "05_2026_2-" (número_ano_semestre seguido de separador) -> "05/2026 - "
-        # o marcador provisório protege esse traço do collapse genérico abaixo
         nome = re.sub(
             r"(\d+)_(\d{4})(?:_\d+)?(-)?",
             lambda m: f"{m.group(1)}/{m.group(2)}" + (" \x00DASH\x00 " if m.group(3) else ""),
@@ -63,16 +65,53 @@ def _formatar_fontes(sources: list[str]) -> str:
     return f"{rotulo_campo}: {', '.join(rotulos)}"
 
 
+def _gerar_pergunta_coleta(perfil: Perfil) -> str:
+    """
+    Usa o LLM pra formular a próxima pergunta de coleta de forma
+    acolhedora, com base no que já se sabe e no que ainda falta.
+    """
+    client = OpenAI(
+        api_key=os.environ["GROQ_API_KEY"],
+        base_url="https://api.groq.com/openai/v1",
+    )
+    prompt = PROMPT_COLETA.format(
+        perfil_atual=perfil.model_dump(),
+        campos_faltantes=perfil.campos_faltantes(),
+    )
+    resposta = client.chat.completions.create(
+        model=os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile"),
+        messages=[{"role": "system", "content": prompt}],
+        temperature=0.7,
+    )
+    return resposta.choices[0].message.content
+
+
 def responder(user_id: str, texto: str, sessao: dict) -> str:
     """
-    Recebe o id do usuário, o texto que ele mandou, e a sessão atual
-    (o "estado" da conversa dele, vindo do Redis).
+    Recebe o id do usuário, o texto que ele mandou, e a sessão atual.
 
-    Chama o RAG de verdade (`retrieval.generate.answer`) e formata a
-    resposta pro canal. `sessao` ainda não é usada aqui — a
-    personalização por perfil é Fase 2 — mas o parâmetro fica na
-    assinatura pra não quebrar o contrato quando ela chegar.
+    Se o perfil ainda não estiver completo, extrai o que der da
+    mensagem, atualiza a sessão (in-place -- quem chama esta função
+    é responsável por persistir a sessão de volta no Redis) e
+    devolve a próxima pergunta de coleta. Só chama o RAG quando o
+    perfil já estiver completo.
     """
+    perfil_atual = sessao.get("perfil") or {}
+    perfil = Perfil(**perfil_atual)
+
+    if determinar_fase(perfil) != "completo":
+        perfil = extrair_perfil(texto, perfil_atual)
+        sessao["perfil"] = perfil.model_dump()
+        sessao["fase_dialogo"] = determinar_fase(perfil)
+
+        if sessao["fase_dialogo"] != "completo":
+            try:
+                return _gerar_pergunta_coleta(perfil)
+            except Exception:
+                logger.exception("Falha ao gerar pergunta de coleta para user_id=%s", user_id)
+                return _MENSAGEM_FALLBACK
+        # se acabou de completar, cai direto pro RAG abaixo, na mesma resposta
+
     try:
         resultado = answer(texto)
     except Exception:
