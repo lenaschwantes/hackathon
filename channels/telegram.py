@@ -15,6 +15,11 @@ from channels.engine import responder as fake_responder
 from channels.rate_limit import MENSAGEM_LIMITE_EXCEDIDO, permitido
 from channels.session import carregar_sessao, salvar_sessao
 
+# Teto de tamanho de mensagem: sem isso, uma mensagem de qualquer
+# tamanho chega inteira nos motores (Groq/Voyage, cobrados por token),
+# expondo o pipeline a abuso via mensagens gigantes.
+_MAX_CARACTERES_MENSAGEM = 4000
+
 
 class TelegramAdapter(ChannelAdapter):
     def __init__(self, responder=None):
@@ -39,7 +44,7 @@ class TelegramAdapter(ChannelAdapter):
         aqui, só a orquestração entre sessão e motor.
         """
         user_id = str(update.effective_user.id)
-        texto = update.message.text
+        texto = update.message.text[:_MAX_CARACTERES_MENSAGEM]
 
         if not await permitido(user_id):
             await update.message.reply_text(MENSAGEM_LIMITE_EXCEDIDO)

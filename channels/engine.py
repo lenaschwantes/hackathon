@@ -28,6 +28,16 @@ _MENSAGEM_FALLBACK = (
 _EXTENSOES = (".pdf", ".docx", ".doc", ".odt", ".pptx")
 
 
+def _logar_falha(operacao: str, user_id: str, exc: Exception) -> None:
+    """
+    Loga só o tipo da exceção, nunca sua mensagem nem o traceback: uma
+    lib downstream (cliente HTTP do Groq/Voyage) pode embutir uma
+    credencial na mensagem de erro, e `logger.exception` gravaria isso
+    sem filtro no log de aplicação.
+    """
+    logger.error("Falha ao %s para user_id=%s (%s)", operacao, user_id, type(exc).__name__)
+
+
 def _rotulo_fonte(file_name: str) -> str:
     """Deriva um rótulo legível a partir do nome de arquivo bruto.
 
@@ -110,20 +120,20 @@ def responder(user_id: str, texto: str, sessao: dict) -> str:
         if sessao["fase_dialogo"] != "completo":
             try:
                 return _gerar_pergunta_coleta(perfil)
-            except Exception:
-                logger.exception("Falha ao gerar pergunta de coleta para user_id=%s", user_id)
+            except Exception as exc:
+                _logar_falha("gerar pergunta de coleta", user_id, exc)
                 return _MENSAGEM_FALLBACK
 
         try:
             return gerar_recomendacao(perfil)
-        except Exception:
-            logger.exception("Falha ao gerar recomendação para user_id=%s", user_id)
+        except Exception as exc:
+            _logar_falha("gerar recomendação", user_id, exc)
             return _MENSAGEM_FALLBACK
 
     try:
         resultado = answer(texto)
-    except Exception:
-        logger.exception("Falha ao chamar answer() para user_id=%s", user_id)
+    except Exception as exc:
+        _logar_falha("chamar answer()", user_id, exc)
         return _MENSAGEM_FALLBACK
 
     texto_resposta = (resultado or {}).get("answer")

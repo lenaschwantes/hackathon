@@ -24,4 +24,4 @@ jobs:
         run: uv sync --all-groups
 
       - name: Run tests
-        run: uv run pytest tests/ -q
+        run: uv run pytest tests/ -q -m "not integration"

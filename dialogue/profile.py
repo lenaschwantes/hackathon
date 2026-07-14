@@ -85,8 +85,10 @@ def extrair_perfil(texto: str, perfil_atual: dict) -> Perfil:
     """
     try:
         bruto = _chamar_llm(texto, perfil_atual)
-    except Exception:
-        logger.exception("Falha ao extrair perfil via LLM")
+    except Exception as exc:
+        # Só o tipo da exceção -- a mensagem pode embutir uma credencial
+        # vinda do cliente HTTP do Groq (ex: header de Authorization).
+        logger.error("Falha ao extrair perfil via LLM (%s)", type(exc).__name__)
         return Perfil(**perfil_atual)
 
     mesclado = dict(perfil_atual)
@@ -97,6 +99,6 @@ def extrair_perfil(texto: str, perfil_atual: dict) -> Perfil:
 
     try:
         return Perfil(**mesclado)
-    except ValidationError:
-        logger.exception("LLM devolveu perfil em formato inesperado")
+    except ValidationError as exc:
+        logger.error("LLM devolveu perfil em formato inesperado (%s)", type(exc).__name__)
         return Perfil(**perfil_atual)

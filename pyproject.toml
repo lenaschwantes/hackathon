@@ -23,6 +23,11 @@ dependencies = [
 [tool.ruff]
 line-length = 100
 
+[tool.pytest.ini_options]
+markers = [
+    "integration: exige infraestrutura real (Weaviate, Voyage, Groq) — pule com `-m \"not integration\"`",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
