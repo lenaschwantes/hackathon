@@ -26,13 +26,23 @@ def montar_contexto(perfil: Perfil, hoje: date) -> dict:
     """
     Chama o motor de recomendacao e serializa o resultado num dict
     JSON-safe (datas viram string ISO) pronto pra entrar no prompt.
+
+    `recomendar()` agrupa por camada de proximidade (`na_cidade`,
+    `regiao`, `ead`, `outras_cidades`) em vez de filtrar cidade como
+    fronteira rigida -- repassamos as camadas como vieram, pra redacao
+    poder ser transparente sobre o quanto de deslocamento cada opcao
+    implica. Sem `alcance` explicito, usa o default de `recomendar()`
+    (inclusivo, mas nunca extrapola pra `outras_cidades` sozinho).
     """
     resultado = recomendar(
         cidade=perfil.cidade, hoje=hoje, nivel=perfil.nivel, modalidade=perfil.modalidade
     )
     return {
         "interesse": perfil.interesse,
-        "abertas": [o.model_dump(mode="json") for o in resultado["abertas"]],
+        "na_cidade": [o.model_dump(mode="json") for o in resultado["na_cidade"]],
+        "regiao": [o.model_dump(mode="json") for o in resultado["regiao"]],
+        "ead": [o.model_dump(mode="json") for o in resultado["ead"]],
+        "outras_cidades": [o.model_dump(mode="json") for o in resultado["outras_cidades"]],
         "proxima": resultado["proxima"].model_dump(mode="json") if resultado["proxima"] else None,
     }
 
