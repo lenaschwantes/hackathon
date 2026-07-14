@@ -8,12 +8,12 @@ Projeto da 1ª Jornada Incubintech, Inovação Aberta, Desafio 12 (LabCiDig).
 
 O perfil do cidadão alimenta dois motores separados, e eles não se misturam:
 
-- **Recomendação (estruturado):** qual curso, câmpus, inscrição aberta ou não. Sai de uma consulta com filtro por localização e calendário. O LLM não decide data, recebe o resultado pronto.
+- **Recomendação (estruturado):** qual curso, câmpus, inscrição aberta ou não. Sai de uma consulta com filtro por localização, nível de curso e modalidade, cortada pelo calendário. O LLM não decide data, recebe o resultado pronto.
 - **Tradução (RAG):** o que significa a cota, requisitos, forma de ingresso. Sai da recuperação híbrida ancorada no edital, sempre citando a fonte.
 
 Essa separação é o que garante fidelidade: o assistente nunca inventa prazo, e quando não há base no acervo, reconhece que não sabe em vez de chutar.
 
-`channels/engine.py` orquestra os dois: assim que o perfil fica completo, chama a Recomendação (`dialogue/recommendation.py` -> `recommend/opportunities.py`); mensagens seguintes, com o perfil já completo, seguem para a Tradução (RAG). Um motor nunca redige com dado do outro.
+`channels/engine.py` orquestra os dois: assim que o perfil fica completo (cidade, escolaridade, interesse e nível de curso desejado), chama a Recomendação (`dialogue/recommendation.py` -> `recommend/opportunities.py`); mensagens seguintes, com o perfil já completo, seguem para a Tradução (RAG) — a menos que a pessoa peça outra opção explicitamente ("mostra outra opção"), caso em que um classificador leve via LLM (`quer_nova_recomendacao`) detecta o pedido e gera nova recomendação em vez de cair no RAG. Um motor nunca redige com dado do outro. A extração de perfil também recebe o histórico recente da conversa como contexto, pra resolver respostas curtas que só fazem sentido junto da pergunta anterior (ex: "advogado" respondendo "qual seu interesse?").
 
 Stack: embeddings com Voyage (`voyage-3`), geração com Groq (`llama-3.3-70b-versatile`, API compatível com OpenAI), store vetorial no Weaviate com busca híbrida (vetor + BM25).
 

@@ -19,7 +19,13 @@ from dialogue.prompts import PROMPT_EXTRACAO
 
 logger = logging.getLogger(__name__)
 
-CAMPOS_ESSENCIAIS = ("cidade", "escolaridade", "interesse")
+CAMPOS_ESSENCIAIS = ("cidade", "escolaridade", "interesse", "nivel")
+_CAMPOS_EXTRAIDOS = (*CAMPOS_ESSENCIAIS, "modalidade")
+
+# Máximo de turnos recentes passados como contexto pra extração --
+# só o suficiente pra resolver uma referência à mensagem anterior, sem
+# inflar o prompt.
+_MAX_HISTORICO_NO_PROMPT = 4
 
 
 class Perfil(BaseModel):
@@ -30,6 +36,10 @@ class Perfil(BaseModel):
     cidade: Optional[str] = Field(default=None, description="Cidade ou municipio onde a pessoa mora")
     escolaridade: Optional[str] = Field(default=None, description="Etapa de escolaridade ja concluida")
     interesse: Optional[str] = Field(default=None, description="Area ou curso de interesse")
+    nivel: Optional[str] = Field(
+        default=None,
+        description="Nivel de curso desejado: tecnico integrado, tecnico subsequente, superior ou FIC",
+    )
     modalidade: Optional[str] = Field(default=None, description="Presencial ou EAD, se a pessoa mencionar")
 
     def campos_essenciais_completos(self) -> bool:
@@ -46,13 +56,13 @@ def perfil_vazio() -> dict:
 
 def determinar_fase(perfil: Perfil) -> str:
     """
-    'completo' quando cidade + escolaridade + interesse estao
+    'completo' quando cidade + escolaridade + interesse + nivel estao
     preenchidos. 'modalidade' e extra, nao bloqueia.
     """
     return "completo" if perfil.campos_essenciais_completos() else "coletando"
 
 
-def _chamar_llm(texto: str, perfil_atual: dict) -> dict:
+def _chamar_llm(texto: str, perfil_atual: dict, historico: list[dict] | None = None) -> dict:
     """
     Isolado numa funcao propria pra poder ser trocado/mockado nos
     testes sem precisar de chave de API de verdade.
@@ -61,14 +71,18 @@ def _chamar_llm(texto: str, perfil_atual: dict) -> dict:
         api_key=os.environ["GROQ_API_KEY"],
         base_url="https://api.groq.com/openai/v1",
     )
+    payload = {
+        "perfil_atual": perfil_atual,
+        "mensagem": texto,
+    }
+    if historico:
+        payload["historico"] = historico[-_MAX_HISTORICO_NO_PROMPT:]
+
     resposta = client.chat.completions.create(
         model=os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile"),
         messages=[
             {"role": "system", "content": PROMPT_EXTRACAO},
-            {"role": "user", "content": json.dumps({
-                "perfil_atual": perfil_atual,
-                "mensagem": texto,
-            }, ensure_ascii=False)},
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
         ],
         response_format={"type": "json_object"},
         temperature=0,
@@ -77,14 +91,19 @@ def _chamar_llm(texto: str, perfil_atual: dict) -> dict:
     return json.loads(conteudo)
 
 
-def extrair_perfil(texto: str, perfil_atual: dict) -> Perfil:
+def extrair_perfil(texto: str, perfil_atual: dict, historico: list[dict] | None = None) -> Perfil:
     """
     Tenta preencher os campos faltantes do perfil a partir do que a
     pessoa disse. Nunca apaga um campo que ja estava preenchido: so
     sobrescreve quando o LLM devolve um valor novo e nao-vazio.
+
+    `historico` (opcional, ultimas mensagens da conversa) da contexto
+    pra resolver referencia a pergunta anterior -- ex: se a ultima
+    pergunta do bot foi sobre interesse e a pessoa responde so
+    "advogado", o LLM entende que isso preenche "interesse".
     """
     try:
-        bruto = _chamar_llm(texto, perfil_atual)
+        bruto = _chamar_llm(texto, perfil_atual, historico)
     except Exception as exc:
         # Só o tipo da exceção -- a mensagem pode embutir uma credencial
         # vinda do cliente HTTP do Groq (ex: header de Authorization).
@@ -92,7 +111,7 @@ def extrair_perfil(texto: str, perfil_atual: dict) -> Perfil:
         return Perfil(**perfil_atual)
 
     mesclado = dict(perfil_atual)
-    for campo in ("cidade", "escolaridade", "interesse", "modalidade"):
+    for campo in _CAMPOS_EXTRAIDOS:
         valor_novo = bruto.get(campo)
         if valor_novo:
             mesclado[campo] = valor_novo

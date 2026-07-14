@@ -15,7 +15,7 @@ from openai import OpenAI
 
 from dialogue.profile import Perfil, determinar_fase, extrair_perfil
 from dialogue.prompts import PROMPT_COLETA
-from dialogue.recommendation import gerar_recomendacao
+from dialogue.recommendation import gerar_recomendacao, quer_nova_recomendacao
 from retrieval.generate import answer
 
 logger = logging.getLogger(__name__)
@@ -26,6 +26,11 @@ _MENSAGEM_FALLBACK = (
 )
 
 _EXTENSOES = (".pdf", ".docx", ".doc", ".odt", ".pptx")
+
+# Teto de tamanho de mensagem: protege qualquer canal que chame
+# responder() (não só o Telegram) contra abuso via mensagem gigante
+# nos motores pagos (Groq/Voyage).
+_MAX_CARACTERES_MENSAGEM = 4000
 
 
 def _logar_falha(operacao: str, user_id: str, exc: Exception) -> None:
@@ -102,18 +107,24 @@ def responder(user_id: str, texto: str, sessao: dict) -> str:
     Recebe o id do usuário, o texto que ele mandou, e a sessão atual.
 
     Se o perfil ainda não estiver completo, extrai o que der da
-    mensagem, atualiza a sessão (in-place -- quem chama esta função
-    é responsável por persistir a sessão de volta no Redis) e
-    devolve a próxima pergunta de coleta. Quando o perfil acaba de
-    ficar completo neste turno, devolve a recomendação do motor
-    estruturado (`recommend/opportunities.py`) em vez do RAG. Só cai
-    no RAG quando o perfil já estava completo antes desta mensagem.
+    mensagem (com o histórico recente como contexto pra resolver
+    referências tipo "e advogado?"), atualiza a sessão (in-place --
+    quem chama esta função é responsável por persistir a sessão de
+    volta no Redis) e devolve a próxima pergunta de coleta. Quando o
+    perfil acaba de ficar completo neste turno, devolve a recomendação
+    do motor estruturado (`recommend/opportunities.py`). Com o perfil
+    já completo de antes, uma nova recomendação só é gerada se a
+    pessoa pedir explicitamente (`quer_nova_recomendacao`); caso
+    contrário cai no RAG.
     """
+    texto = texto[:_MAX_CARACTERES_MENSAGEM]
+
     perfil_atual = sessao.get("perfil") or {}
     perfil = Perfil(**perfil_atual)
 
     if determinar_fase(perfil) != "completo":
-        perfil = extrair_perfil(texto, perfil_atual)
+        historico = sessao.get("historico") or []
+        perfil = extrair_perfil(texto, perfil_atual, historico=historico)
         sessao["perfil"] = perfil.model_dump()
         sessao["fase_dialogo"] = determinar_fase(perfil)
 
@@ -128,6 +139,13 @@ def responder(user_id: str, texto: str, sessao: dict) -> str:
             return gerar_recomendacao(perfil)
         except Exception as exc:
             _logar_falha("gerar recomendação", user_id, exc)
+            return _MENSAGEM_FALLBACK
+
+    if quer_nova_recomendacao(texto):
+        try:
+            return gerar_recomendacao(perfil)
+        except Exception as exc:
+            _logar_falha("gerar nova recomendação", user_id, exc)
             return _MENSAGEM_FALLBACK
 
     try:

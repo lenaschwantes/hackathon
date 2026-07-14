@@ -11,14 +11,10 @@ from telegram import Update
 from telegram.ext import Application, ContextTypes, MessageHandler, filters
 
 from channels.base import ChannelAdapter
+from channels.engine import _MAX_CARACTERES_MENSAGEM
 from channels.engine import responder as fake_responder
 from channels.rate_limit import MENSAGEM_LIMITE_EXCEDIDO, permitido
 from channels.session import carregar_sessao, salvar_sessao
-
-# Teto de tamanho de mensagem: sem isso, uma mensagem de qualquer
-# tamanho chega inteira nos motores (Groq/Voyage, cobrados por token),
-# expondo o pipeline a abuso via mensagens gigantes.
-_MAX_CARACTERES_MENSAGEM = 4000
 
 
 class TelegramAdapter(ChannelAdapter):

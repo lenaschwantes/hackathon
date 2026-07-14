@@ -7,17 +7,29 @@ do motor estruturado (`recommend/opportunities.py`).
 
 PROMPT_EXTRACAO = """Você extrai dados de perfil de uma conversa em português do Brasil.
 
-Receberá um JSON com "perfil_atual" (o que já se sabe da pessoa) e
-"mensagem" (o que ela acabou de escrever). Devolva APENAS um JSON
-com os campos: cidade, escolaridade, interesse, modalidade.
+Receberá um JSON com "perfil_atual" (o que já se sabe da pessoa),
+"mensagem" (o que ela acabou de escrever) e, às vezes, "historico"
+(as últimas mensagens da conversa, mais antiga primeiro). Devolva
+APENAS um JSON com os campos: cidade, escolaridade, interesse, nivel,
+modalidade.
 
 Regras:
 - Preencha só o que conseguir entender com confianca da mensagem atual.
 - Se um campo nao foi mencionado agora, devolva null para ele --
   nao repita nem invente o valor antigo.
+- Use "historico" só pra entender referencia a pergunta anterior --
+  ex: se a ultima mensagem do bot perguntou o interesse e a pessoa so
+  respondeu "advogado", preencha "interesse" com isso. Nao extraia
+  campo nenhum so a partir do historico sozinho, sem a mensagem atual
+  confirmar ou responder a ele.
 - "escolaridade" deve refletir a etapa ja concluida (ex: "ensino
   medio completo", "ensino fundamental", "ensino medio tecnico").
 - "interesse" e a area ou curso que a pessoa quer estudar.
+- "nivel" e o nivel de curso que a pessoa quer fazer agora -- devolva
+  exatamente um destes valores, e so se a pessoa deixar claro: "tecnico
+  integrado", "tecnico subsequente", "superior" ou "FIC". Nao infira a
+  partir da escolaridade -- pergunte-se so seria obvio pra um humano
+  lendo a mensagem atual.
 - "modalidade" so se a pessoa mencionar presencial ou EAD/distancia.
 - Nunca peca nem infira CPF, nome completo, ou dado sensivel.
 - Nao invente informacao que a pessoa nao disse.
@@ -68,4 +80,22 @@ Regras, sem excecao:
 
 Responda so com o texto da mensagem final para a pessoa, sem markdown
 de titulo nem texto explicando o que voce fez.
+"""
+
+PROMPT_CLASSIFICA_PEDIDO_RECOMENDACAO = """Voce decide se uma mensagem de
+um cidadao conversando com o IngressaEdu e um PEDIDO por nova
+recomendacao de curso, ou uma pergunta normal sobre o que ja foi
+recomendado.
+
+Exemplos de PEDIDO por nova recomendacao: "mostra outra opcao", "tem
+mais algum curso?", "e em outra modalidade?", "nao gostei desse, tem
+outro?".
+
+Exemplos de pergunta normal (NAO e pedido de nova recomendacao):
+"quando fecha a inscricao?", "o que e cota?", "quais documentos
+preciso?", "obrigado!".
+
+Devolva APENAS um JSON: {"quer_nova_recomendacao": true ou false}.
+
+Na duvida, responda false -- deixa a mensagem seguir pro fluxo normal.
 """

@@ -9,7 +9,7 @@ from datetime import date
 
 from dialogue import recommendation
 from dialogue.profile import Perfil
-from dialogue.recommendation import gerar_recomendacao, montar_contexto
+from dialogue.recommendation import gerar_recomendacao, montar_contexto, quer_nova_recomendacao
 from recommend.opportunities import Oportunidade
 
 
@@ -77,6 +77,25 @@ class TestMontarContexto:
         assert contexto["abertas"] == []
         assert contexto["proxima"] is None
 
+    def test_repassa_nivel_do_perfil_pro_filtro(self, monkeypatch):
+        capturado = {}
+
+        def fake_recomendar(cidade, hoje, nivel=None, modalidade=None, *, oportunidades=None):
+            capturado["nivel"] = nivel
+            return {"abertas": [], "proxima": None}
+
+        monkeypatch.setattr(recommendation, "recomendar", fake_recomendar)
+        perfil = Perfil(
+            cidade="Blumenau",
+            escolaridade="ensino medio completo",
+            interesse="tecnologia",
+            nivel="superior",
+        )
+
+        montar_contexto(perfil, date(2026, 7, 10))
+
+        assert capturado["nivel"] == "superior"
+
 
 class TestGerarRecomendacao:
     def test_repassa_contexto_correto_pro_llm(self, monkeypatch):
@@ -96,3 +115,24 @@ class TestGerarRecomendacao:
         assert resultado == "Encontrei uma opção pra você em Blumenau!"
         assert capturado["contexto"]["interesse"] == "tecnologia"
         assert len(capturado["contexto"]["abertas"]) == 1
+
+
+class TestQuerNovaRecomendacao:
+    def test_classificador_diz_que_quer_nova_recomendacao(self, monkeypatch):
+        monkeypatch.setattr(
+            recommendation, "_chamar_llm_classificador", lambda texto: {"quer_nova_recomendacao": True}
+        )
+        assert quer_nova_recomendacao("mostra outra opção") is True
+
+    def test_classificador_diz_que_e_pergunta_normal(self, monkeypatch):
+        monkeypatch.setattr(
+            recommendation, "_chamar_llm_classificador", lambda texto: {"quer_nova_recomendacao": False}
+        )
+        assert quer_nova_recomendacao("quando fecha a inscrição?") is False
+
+    def test_falha_no_classificador_nao_bloqueia_e_assume_false(self, monkeypatch):
+        def _chamar_llm_com_erro(texto):
+            raise RuntimeError("Groq indisponível")
+
+        monkeypatch.setattr(recommendation, "_chamar_llm_classificador", _chamar_llm_com_erro)
+        assert quer_nova_recomendacao("qualquer coisa") is False

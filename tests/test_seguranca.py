@@ -89,6 +89,7 @@ _PERFIL_COMPLETO = {
     "cidade": "Blumenau",
     "escolaridade": "ensino medio completo",
     "interesse": "tecnologia",
+    "nivel": "tecnico integrado",
     "modalidade": None,
 }
 
@@ -377,14 +378,18 @@ _CASOS_MALFORMADOS = [
 class TestEntradaMalformada:
     @pytest.mark.parametrize("texto", _CASOS_MALFORMADOS)
     def test_responder_nunca_levanta_excecao_nao_tratada(self, monkeypatch, texto):
-        # Só os dois pontos de contato com o LLM ficam mockados; toda a
+        # Só os pontos de contato com o LLM ficam mockados; toda a
         # lógica real de channels/engine.py::responder() (Perfil,
         # determinar_fase, mutação de sessão) roda de verdade com o
         # texto malformado passando por ela.
-        monkeypatch.setattr(engine, "extrair_perfil", lambda t, perfil_atual: Perfil(**perfil_atual))
+        monkeypatch.setattr(
+            engine, "extrair_perfil", lambda t, perfil_atual, historico=None: Perfil(**perfil_atual)
+        )
         monkeypatch.setattr(engine, "_gerar_pergunta_coleta", lambda perfil: "Pergunta de coleta.")
 
-        sessao = _sessao({"cidade": None, "escolaridade": None, "interesse": None, "modalidade": None})
+        sessao = _sessao(
+            {"cidade": None, "escolaridade": None, "interesse": None, "nivel": None, "modalidade": None}
+        )
 
         resposta = responder("user-malformado", texto, sessao)
 
@@ -393,6 +398,7 @@ class TestEntradaMalformada:
 
     @pytest.mark.parametrize("texto", _CASOS_MALFORMADOS)
     def test_responder_com_perfil_completo_nunca_levanta_excecao(self, monkeypatch, texto):
+        monkeypatch.setattr(engine, "quer_nova_recomendacao", lambda t: False)
         monkeypatch.setattr(engine, "answer", lambda t: {"answer": "resposta ok", "sources": []})
 
         sessao = _sessao(dict(_PERFIL_COMPLETO), fase="completo")
@@ -461,6 +467,7 @@ class TestVazamentoDeSegredo:
                 f"401 client error from Groq, Authorization: Bearer {self._SEGREDO}"
             )
 
+        monkeypatch.setattr(engine, "quer_nova_recomendacao", lambda t: False)
         monkeypatch.setattr(engine, "answer", _answer_com_segredo_na_excecao)
 
     def test_resposta_ao_usuario_nao_vaza_segredo(self, monkeypatch):
