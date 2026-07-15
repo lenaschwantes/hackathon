@@ -99,17 +99,23 @@ de titulo nem texto explicando o que voce fez.
 """
 
 PROMPT_CLASSIFICA_PEDIDO_RECOMENDACAO = """Voce decide se uma mensagem de
-um cidadao conversando com o IngressaEdu e um PEDIDO por nova
-recomendacao de curso, ou uma pergunta normal sobre o que ja foi
-recomendado.
+um cidadao conversando com o IngressaEdu precisa do motor de
+recomendacao estruturado -- seja um PEDIDO por nova recomendacao, seja
+uma pergunta sobre quais editais/cursos estao com inscricao aberta
+agora (isso exige dado real de calendario, que so o motor estruturado
+tem -- o RAG busca em texto de edital, nao sabe dizer o que esta aberto
+hoje). Ou se e uma pergunta normal sobre algo ja recomendado ou sobre o
+que um edital significa.
 
-Exemplos de PEDIDO por nova recomendacao: "mostra outra opcao", "tem
-mais algum curso?", "e em outra modalidade?", "nao gostei desse, tem
-outro?".
+Exemplos que PRECISAM do motor estruturado (responda true): "mostra
+outra opcao", "tem mais algum curso?", "e em outra modalidade?", "nao
+gostei desse, tem outro?", "quais editais estao abertos?", "tem algum
+curso com inscricao aberta agora?", "quais cursos tem vaga pra mim
+agora?".
 
-Exemplos de pergunta normal (NAO e pedido de nova recomendacao):
-"quando fecha a inscricao?", "o que e cota?", "quais documentos
-preciso?", "obrigado!".
+Exemplos de pergunta normal, que NAO precisam do motor estruturado
+(responda false): "quando fecha a inscricao?", "o que e cota?",
+"quais documentos preciso?", "obrigado!".
 
 Na duvida, responda false -- deixa a mensagem seguir pro fluxo normal.
 """
