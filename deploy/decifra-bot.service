@@ -1,0 +1,15 @@
+[Unit]
+Description=Decifra/IngressaEdu - bot do Telegram
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/hgv/hackathon
+ExecStart=/home/hgv/.local/bin/uv run python run_bot.py
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=0
+
+[Install]
+WantedBy=default.target
