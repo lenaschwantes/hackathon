@@ -47,11 +47,17 @@ def executar_ciclo(source: EditalSource, store: WeaviateStore) -> dict:
     for i, ref in enumerate(novos):
         if i > 0:
             time.sleep(_PAUSA_ENTRE_DOWNLOADS_SEGUNDOS)
-        resultados.append(ingerir_edital(ref, store))
+        resultado = ingerir_edital(ref, store)
+        resultados.append(resultado)
 
     sucesso = sum(1 for r in resultados if r.get("status") != "failed")
     falha = len(resultados) - sucesso
-    resumo = {"descobertos": len(novos), "sucesso": sucesso, "falha": falha}
+    resumo = {
+        "descobertos": len(novos),
+        "sucesso": sucesso,
+        "falha": falha,
+        "arquivos": resultados,
+    }
     logger.info("Ciclo concluído: %s", resumo)
     return resumo
 

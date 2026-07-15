@@ -5,6 +5,11 @@ from logging import getLogger
 import voyageai
 from langchain_voyageai import VoyageAIEmbeddings
 
+
+class RateLimitError(Exception):
+    """Erro de limite de taxa da Voyage."""
+
+
 from config.settings import settings
 
 sleep_time = 0.5
@@ -42,6 +47,9 @@ class VoyageEmbedding:
             model=embedding_model, api_key=VOYAGE_API_KEY
         )
         self.embedding_model = embedding_model
+        self.max_retries = 5
+        self.retry_base_delay_seconds = 2.0
+        self.max_delay_seconds = 30.0
 
     def close_voyage(self):
         """
@@ -108,6 +116,26 @@ class VoyageEmbedding:
         except Exception as e:
             raise RuntimeError("Erro ao criar a conexão com a Voyage") from e
 
+    def _sleep_with_backoff(self, attempt: int, exc: Exception) -> None:
+        delay = min(self.retry_base_delay_seconds * (2 ** (attempt - 1)), self.max_delay_seconds)
+        logger.warning("Voyage rate limited, retrying in %.1fs (%s)", delay, exc)
+        time.sleep(delay)
+
+    def _embed_batch_with_retries(self, batch: list[str]) -> list[list[float]]:
+        last_error: Exception | None = None
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                return self.embedding_function.embed_documents(batch)
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+                if attempt == self.max_retries:
+                    break
+                if "rate" in str(exc).lower() or "limit" in str(exc).lower() or isinstance(exc, RateLimitError):
+                    self._sleep_with_backoff(attempt, exc)
+                    continue
+                raise
+        raise RuntimeError(f"Falha na vetorização de lote após {self.max_retries} tentativas") from last_error
+
     def Vectorize_documents(
         self, chunks: list[str], batch_size: int = batch_valor
     ) -> list[list[float]]:
@@ -147,7 +175,7 @@ class VoyageEmbedding:
 
             for i in range(0, len(chunks), batch_size):
                 batch = chunks[i : i + batch_size]
-                batch_embeddings = self.embedding_function.embed_documents(batch)
+                batch_embeddings = self._embed_batch_with_retries(batch)
 
                 all_embeddings.extend(batch_embeddings)
                 logger.debug(

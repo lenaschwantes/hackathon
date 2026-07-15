@@ -62,7 +62,12 @@ def ingest_document(
         logger.info("Documento já indexado, pulando: %s", file_name)
         return {"status": "skipped", "file_name": file_name, "file_hash": file_hash}
 
-    text, meta = extract_text(file_name, content)
+    try:
+        text, meta = extract_text(file_name, content)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Falha ao extrair texto de %s: %s", file_name, exc)
+        return {"status": "failed", "file_name": file_name, "phase": "extract", "error": str(exc)}
+
     text = clean_text(text)
 
     if len(text) < settings.min_extracted_chars:
@@ -85,14 +90,18 @@ def ingest_document(
 
     chunks = chunk_text(text)
     if chunks:
-        embedder = VoyageEmbedding(collection_name=store.collection_name)
-        vectors = embedder.Vectorize_documents(chunks)
-        store.insert_chunks(
-            file_name=file_name,
-            file_hash=file_hash,
-            chunks=chunks,
-            vectors=vectors,
-        )
-        logger.info("Indexados %d chunks: %s", len(chunks), file_name)
+        try:
+            embedder = VoyageEmbedding(collection_name=store.collection_name)
+            vectors = embedder.Vectorize_documents(chunks)
+            store.insert_chunks(
+                file_name=file_name,
+                file_hash=file_hash,
+                chunks=chunks,
+                vectors=vectors,
+            )
+            logger.info("Indexados %d chunks: %s", len(chunks), file_name)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Falha ao vetorizar %s: %s", file_name, exc)
+            return {"status": "failed", "file_name": file_name, "phase": "embed", "error": str(exc)}
 
     return result

@@ -53,7 +53,7 @@ Rodando fora do docker (do host), aponte para as portas mapeadas no compose:
 ```bash
 # no .env:
 WEAVIATE_HTTP_URL=http://localhost:8081
-WEAVIATE_GRPC_PORT=50052
+WEAVIATE_GRPC_PORT=50051
 ```
 
 PDFs são extraídos via LibreOffice quando disponível; sem ele, cai no fallback pypdf automaticamente.

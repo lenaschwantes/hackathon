@@ -10,7 +10,12 @@ from __future__ import annotations
 from urllib.parse import urlparse
 
 import weaviate
+from weaviate.classes import init
 from weaviate.classes.query import Filter, MetadataQuery
+
+
+class EmbeddingUnavailableError(RuntimeError):
+    """Raised when the embedding backend is unavailable for retrieval."""
 
 from config.settings import settings
 from ingestion.embeddings import VoyageEmbedding
@@ -50,37 +55,50 @@ def hybrid_search(
     k = k or settings.search_k
     alpha = settings.search_alpha if alpha is None else alpha
 
-    embedder = VoyageEmbedding(collection_name=collection)
-    query_vector = embedder.Vectorize_documents([query])[0]
-
     client = weaviate.connect_to_local(
         host=_host(),
         port=urlparse(settings.weaviate_http_url).port or 8080,
         grpc_port=settings.weaviate_grpc_port,
+        additional_config=init.AdditionalConfig(timeout=init.Timeout(init=30)),
     )
     try:
         coll = client.collections.get(collection)
-        response = coll.query.hybrid(
-            query=query,
-            vector=query_vector,
-            target_vector="content_vector",
-            alpha=alpha,
-            limit=k,
-            # exclui o registro-documento (texto bruto inteiro, sem
-            # chunk_index) da coleção raw — só chunks de verdade têm
-            # chunk_index setado. Sem esse filtro, o texto inteiro do
-            # PDF pode entrar no contexto e estourar o limite de
-            # tokens do LLM.
-            filters=Filter.by_property("chunk_index").greater_or_equal(0),
-            return_metadata=MetadataQuery(score=True),
-        )
-        return [
-            {
-                "text": o.properties.get("content", ""),
-                "file_name": o.properties.get("file_name", ""),
-                "score": o.metadata.score,
-            }
-            for o in response.objects
-        ]
+        try:
+            embedder = VoyageEmbedding(collection_name=collection)
+            query_vector = embedder.Vectorize_documents([query])[0]
+            response = coll.query.hybrid(
+                query=query,
+                vector=query_vector,
+                target_vector="content_vector",
+                alpha=alpha,
+                limit=k,
+                filters=Filter.by_property("chunk_index").greater_or_equal(0),
+                return_metadata=MetadataQuery(score=True),
+            )
+            return [
+                {
+                    "text": o.properties.get("content", ""),
+                    "file_name": o.properties.get("file_name", ""),
+                    "score": o.metadata.score,
+                }
+                for o in response.objects
+            ]
+        except Exception as exc:  # noqa: BLE001
+            if "rate" not in str(exc).lower() and "limit" not in str(exc).lower():
+                raise
+            response = coll.query.bm25(
+                query=query,
+                limit=k,
+                filters=Filter.by_property("chunk_index").greater_or_equal(0),
+                return_metadata=MetadataQuery(score=True),
+            )
+            return [
+                {
+                    "text": o.properties.get("content", ""),
+                    "file_name": o.properties.get("file_name", ""),
+                    "score": o.metadata.score,
+                }
+                for o in response.objects
+            ]
     finally:
         client.close()
