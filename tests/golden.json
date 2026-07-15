@@ -1,0 +1,78 @@
+[
+  {
+    "id": "ancora_sisu_2026",
+    "pergunta": "Quais são os prazos de inscrição do Sisu 2026 para os cursos do IFSC?",
+    "tipo": "ancora",
+    "fonte_esperada": "sisu"
+  },
+  {
+    "id": "ancora_cotas",
+    "pergunta": "O IFSC tem políticas de cotas para os cursos técnicos e superiores?",
+    "tipo": "ancora",
+    "fonte_esperada": "cotas"
+  },
+  {
+    "id": "ancora_deing_integrado_subsequente",
+    "pergunta": "Quais editais da DEING tratam de cursos integrados e subsequentes?",
+    "tipo": "ancora",
+    "fonte_esperada": "deing"
+  },
+  {
+    "id": "ancora_relacao_candidato_vaga",
+    "pergunta": "Como funciona a relação entre candidato e vaga no processo seletivo do IFSC?",
+    "tipo": "ancora",
+    "fonte_esperada": "processo seletivo"
+  },
+  {
+    "id": "ancora_resultado_preliminar",
+    "pergunta": "Quando costuma sair o resultado preliminar do processo seletivo?",
+    "tipo": "ancora",
+    "fonte_esperada": "resultado"
+  },
+  {
+    "id": "ancora_resultado_final",
+    "pergunta": "E quando sai o resultado final da seleção?",
+    "tipo": "ancora",
+    "fonte_esperada": "resultado"
+  },
+  {
+    "id": "recusa_bolsa_estudantil",
+    "pergunta": "Quanto vale a bolsa do ProUni para estudantes do IFSC?",
+    "tipo": "recusa"
+  },
+  {
+    "id": "recusa_horario_campus",
+    "pergunta": "Quais são os horários de funcionamento do campus de Florianópolis?",
+    "tipo": "recusa"
+  },
+  {
+    "id": "recusa_vagas_medicina",
+    "pergunta": "Quantas vagas existem para medicina no IFSC em 2026?",
+    "tipo": "recusa"
+  },
+  {
+    "id": "recusa_placar_enem",
+    "pergunta": "Qual é a nota de corte do ENEM para entrar no IFSC em 2026?",
+    "tipo": "recusa"
+  },
+  {
+    "id": "recomenda_tecnico_integrado_florianopolis",
+    "pergunta": "Quero fazer um curso técnico integrado em Florianópolis, com interesse em informática.",
+    "tipo": "recomenda",
+    "perfil": {
+      "cidade": "Florianópolis",
+      "nivel": "técnico integrado",
+      "modalidade": "presencial"
+    }
+  },
+  {
+    "id": "recomenda_superior_ead",
+    "pergunta": "Preciso de uma indicação de curso superior EAD para trabalhar e estudar ao mesmo tempo.",
+    "tipo": "recomenda",
+    "perfil": {
+      "cidade": "Joinville",
+      "nivel": "superior",
+      "modalidade": "EAD"
+    }
+  }
+]
