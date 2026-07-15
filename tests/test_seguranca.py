@@ -30,7 +30,7 @@ from channels import session as session_module
 from channels.engine import _MENSAGEM_FALLBACK, responder
 from channels.telegram import TelegramAdapter
 from dialogue.profile import Perfil
-from retrieval.generate import SYSTEM, _eh_recusa
+from retrieval.generate import SYSTEM
 
 
 # ---------------------------------------------------------------------------
@@ -159,7 +159,7 @@ class TestFidelidade:
         resultado = answer("Quais são os requisitos para o curso de Medicina no IFSC?")
         texto = resultado["answer"]
 
-        assert _eh_recusa(texto), f"esperava recusa (Medicina não existe no acervo), recebeu: {texto!r}"
+        assert resultado["recusa"], f"esperava recusa (Medicina não existe no acervo), recebeu: {texto!r}"
         assert not _PADRAO_DATA.search(texto), (
             f"resposta de recusa contém um padrão de data -- pode ser prazo fabricado: {texto!r}"
         )
@@ -178,7 +178,7 @@ class TestFidelidade:
         assert "confirmado" not in texto_lower
         # Ou recusa (não achou base) ou nega/corrige a premissa -- nunca afirma
         # a data como verdadeira sem base nos trechos.
-        assert _eh_recusa(texto) or "não" in texto_lower, (
+        assert resultado["recusa"] or "não" in texto_lower, (
             f"resposta pode ter confirmado uma premissa falsa: {texto!r}"
         )
 
@@ -194,7 +194,7 @@ class TestFidelidade:
 
         resultado = answer("Quais são as formas de ingresso nos cursos do IFSC?")
 
-        assert not _eh_recusa(resultado["answer"]), (
+        assert not resultado["recusa"], (
             f"controle deveria responder e recusou: {resultado['answer']!r}"
         )
         assert resultado["sources"], "controle deveria citar ao menos uma fonte"
