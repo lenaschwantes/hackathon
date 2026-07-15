@@ -1,6 +1,6 @@
 """
 Testes puros da orquestracao em `channels/engine.py::responder()` --
-nao tocam Groq, Weaviate nem Redis. Todas as chamadas de LLM/RAG/
+nao tocam Anthropic, Weaviate nem Redis. Todas as chamadas de LLM/RAG/
 recomendacao sao isoladas em funcoes proprias (`extrair_perfil`,
 `_gerar_pergunta_coleta`, `gerar_recomendacao`, `quer_nova_recomendacao`,
 `answer`), entao os testes monkeypatcham essas referencias dentro do
@@ -62,7 +62,7 @@ class TestPerfilCompletaNesteTurno:
         )
 
         def _gerar_recomendacao_com_erro(perfil):
-            raise RuntimeError("Groq indisponível")
+            raise RuntimeError("Anthropic indisponível")
 
         monkeypatch.setattr(engine, "gerar_recomendacao", _gerar_recomendacao_com_erro)
 
@@ -115,7 +115,7 @@ class TestPerfilJaCompletoAntesDoTurno:
         self._mocks_que_nao_deveriam_rodar(monkeypatch)
 
         def _gerar_recomendacao_com_erro(perfil):
-            raise RuntimeError("Groq indisponível")
+            raise RuntimeError("Anthropic indisponível")
 
         monkeypatch.setattr(engine, "quer_nova_recomendacao", lambda texto: True)
         monkeypatch.setattr(engine, "gerar_recomendacao", _gerar_recomendacao_com_erro)

@@ -1,7 +1,7 @@
 """
 Rate limiting por usuário, baseado em contador no Redis.
 
-Protege as chamadas ao motor (Groq/Voyage por trás de `channels.engine`)
+Protege as chamadas ao motor (Anthropic/Voyage por trás de `channels.engine`)
 contra flood de mensagens: cada usuário tem um número máximo de mensagens
 dentro de uma janela de tempo. Quando estoura, a mensagem nem chega a
 acionar o motor — o canal responde direto com `MENSAGEM_LIMITE_EXCEDIDO`.

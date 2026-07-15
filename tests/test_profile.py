@@ -1,5 +1,5 @@
 """
-Testes puros do modulo de perfil -- nao tocam Redis, Groq nem
+Testes puros do modulo de perfil -- nao tocam Redis, Anthropic nem
 nenhuma infraestrutura externa. A chamada ao LLM e isolada em
 `_chamar_llm`, entao os testes de extracao usam monkeypatch nela.
 """
@@ -74,7 +74,7 @@ def test_extracao_nao_apaga_campo_ja_preenchido(monkeypatch):
 
 def test_extracao_com_falha_no_llm_preserva_perfil(monkeypatch):
     def fake_chamar_llm_com_erro(texto, perfil_atual, historico=None):
-        raise RuntimeError("Groq indisponivel")
+        raise RuntimeError("Anthropic indisponivel")
 
     monkeypatch.setattr(profile, "_chamar_llm", fake_chamar_llm_com_erro)
     perfil_atual = {"cidade": "Blumenau", "escolaridade": None, "interesse": None, "nivel": None, "modalidade": None}

@@ -15,15 +15,15 @@ Essa separação é o que garante fidelidade: o assistente nunca inventa prazo, 
 
 `channels/engine.py` orquestra os dois: assim que o perfil fica completo (cidade, escolaridade, interesse e nível de curso desejado), chama a Recomendação (`dialogue/recommendation.py` -> `recommend/opportunities.py`); mensagens seguintes, com o perfil já completo, seguem para a Tradução (RAG) — a menos que a pessoa peça outra opção explicitamente ("mostra outra opção"), caso em que um classificador leve via LLM (`quer_nova_recomendacao`) detecta o pedido e gera nova recomendação em vez de cair no RAG. Um motor nunca redige com dado do outro. A extração de perfil também recebe o histórico recente da conversa como contexto, pra resolver respostas curtas que só fazem sentido junto da pergunta anterior (ex: "advogado" respondendo "qual seu interesse?").
 
-Stack: embeddings com Voyage (`voyage-3`), geração com Groq (`llama-3.3-70b-versatile`, API compatível com OpenAI), store vetorial no Weaviate com busca híbrida (vetor + BM25).
+Stack: embeddings com Voyage (`voyage-3`), geração com Anthropic (Claude Sonnet 5 na redação pro cidadão, Claude Haiku 4.5 na extração/classificação estruturada), store vetorial no Weaviate com busca híbrida (vetor + BM25).
 
 ## Estrutura
 
 ```
-config/            settings central (Weaviate, Voyage, Groq, chunking, retrieval)
+config/            settings central (Weaviate, Voyage, Anthropic, chunking, retrieval)
 ingestion/         extração, limpeza, chunking, embedding e store no Weaviate
 ingestion/sources/ fontes de editais (crawler do site do IFSC, pasta local, fallback)
-retrieval/         busca híbrida (vetor + BM25) + geração ancorada via Groq
+retrieval/         busca híbrida (vetor + BM25) + geração ancorada via Anthropic
 recommend/         motor estruturado: filtro de oportunidades por perfil
 channels/          adaptadores de canal (Telegram) + sessão no Redis + engine.py (liga o canal ao RAG)
 utils/             hashing e validação
@@ -40,7 +40,7 @@ docker-compose.yml weaviate + rabbitmq + redis
 ## Como rodar
 
 ```bash
-cp .env.example .env      # preencha VOYAGE_API_KEY e GROQ_API_KEY
+cp .env.example .env      # preencha VOYAGE_API_KEY e ANTHROPIC_API_KEY
 docker compose up -d weaviate rabbitmq redis
 uv sync                   # ou pip install -e .
 # coloque os PDFs em data/editais/
@@ -81,7 +81,7 @@ outros — na última falha vira um "dead-letter" no log.
 ### Bot do Telegram
 
 ```bash
-# no .env, além de VOYAGE_API_KEY e GROQ_API_KEY:
+# no .env, além de VOYAGE_API_KEY e ANTHROPIC_API_KEY:
 TELEGRAM_BOT_TOKEN=<token do @BotFather>
 
 docker compose up -d redis   # sessão de conversa fica no Redis
@@ -92,12 +92,12 @@ uv run python run_bot.py
 (`retrieval/generate.py`); `channels/fake_engine.py` continua no repo só
 para testar o canal sem depender do RAG. `channels/rate_limit.py` limita
 10 mensagens por usuário a cada 60s (contador no Redis) — protege as
-chamadas pagas ao Groq/Voyage de flood.
+chamadas pagas à Anthropic/Voyage de flood.
 
 ## Testes
 
 ```bash
-uv run pytest tests/ -q   # puros: não tocam Weaviate, Voyage nem Groq
+uv run pytest tests/ -q   # puros: não tocam Weaviate, Voyage nem Anthropic
 ```
 
 CI (`.github/workflows/ci.yml`) roda essa mesma suíte a cada push/PR em `main` — não precisa de nenhuma chave de API configurada como secret.
@@ -117,5 +117,5 @@ O core de RAG vem de uma plataforma de produção. Os módulos de extração, li
 ## Diferenciais (além das fases obrigatórias)
 
 - **CI** (`.github/workflows/ci.yml`): roda a suíte de testes puros a cada push/PR.
-- **Rate limiting** (`channels/rate_limit.py`): protege as chamadas pagas ao Groq/Voyage de flood por usuário.
+- **Rate limiting** (`channels/rate_limit.py`): protege as chamadas pagas à Anthropic/Voyage de flood por usuário.
 - **Ingestão automática** (`ingestion/sources/`, `run_auto_ingest.py`): acaba com a inserção manual de editais, com fonte HTML isolada do pipeline e fallback pra pasta local.

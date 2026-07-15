@@ -10,16 +10,21 @@ inventa curso, igual ao contrato documentado em `recomendar()`.
 
 import json
 import logging
-import os
 from datetime import date
 
-from openai import OpenAI
+import anthropic
+from pydantic import BaseModel
 
+from config.settings import settings
 from dialogue.profile import Perfil
 from dialogue.prompts import PROMPT_CLASSIFICA_PEDIDO_RECOMENDACAO, PROMPT_RECOMENDACAO
 from recommend.opportunities import recomendar
 
 logger = logging.getLogger(__name__)
+
+
+class _ClassificacaoPedido(BaseModel):
+    quer_nova_recomendacao: bool
 
 
 def montar_contexto(perfil: Perfil, hoje: date) -> dict:
@@ -52,17 +57,22 @@ def _chamar_llm(contexto: dict) -> str:
     Isolado numa funcao propria pra poder ser trocado/mockado nos
     testes sem precisar de chave de API de verdade.
     """
-    client = OpenAI(
-        api_key=os.environ["GROQ_API_KEY"],
-        base_url="https://api.groq.com/openai/v1",
+    client = anthropic.Anthropic()
+    resposta = client.messages.create(
+        model=settings.anthropic_model_geracao,
+        max_tokens=1200,
+        system=PROMPT_RECOMENDACAO,
+        messages=[
+            {
+                "role": "user",
+                "content": (
+                    "Contexto (JSON, já calculado, é a ÚNICA fonte de verdade): "
+                    + json.dumps(contexto, ensure_ascii=False)
+                ),
+            }
+        ],
     )
-    prompt = PROMPT_RECOMENDACAO.format(contexto=json.dumps(contexto, ensure_ascii=False))
-    resposta = client.chat.completions.create(
-        model=os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile"),
-        messages=[{"role": "system", "content": prompt}],
-        temperature=0.7,
-    )
-    return resposta.choices[0].message.content
+    return next(b.text for b in resposta.content if b.type == "text")
 
 
 def gerar_recomendacao(perfil: Perfil, hoje: date | None = None) -> str:
@@ -80,20 +90,15 @@ def _chamar_llm_classificador(texto: str) -> dict:
     testes sem precisar de chave de API de verdade -- mesmo motivo de
     `_chamar_llm` acima.
     """
-    client = OpenAI(
-        api_key=os.environ["GROQ_API_KEY"],
-        base_url="https://api.groq.com/openai/v1",
+    client = anthropic.Anthropic()
+    resposta = client.messages.parse(
+        model=settings.anthropic_model_extracao,
+        max_tokens=256,
+        system=PROMPT_CLASSIFICA_PEDIDO_RECOMENDACAO,
+        messages=[{"role": "user", "content": texto}],
+        output_format=_ClassificacaoPedido,
     )
-    resposta = client.chat.completions.create(
-        model=os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile"),
-        messages=[
-            {"role": "system", "content": PROMPT_CLASSIFICA_PEDIDO_RECOMENDACAO},
-            {"role": "user", "content": texto},
-        ],
-        response_format={"type": "json_object"},
-        temperature=0,
-    )
-    return json.loads(resposta.choices[0].message.content)
+    return resposta.parsed_output.model_dump()
 
 
 def quer_nova_recomendacao(texto: str) -> bool:

@@ -9,12 +9,12 @@ campos que conseguiu entender -- nunca apaga o que ja estava preenchido.
 
 import json
 import logging
-import os
 from typing import Optional
 
-from openai import OpenAI
+import anthropic
 from pydantic import BaseModel, Field, ValidationError
 
+from config.settings import settings
 from dialogue.prompts import PROMPT_EXTRACAO
 
 logger = logging.getLogger(__name__)
@@ -65,12 +65,11 @@ def determinar_fase(perfil: Perfil) -> str:
 def _chamar_llm(texto: str, perfil_atual: dict, historico: list[dict] | None = None) -> dict:
     """
     Isolado numa funcao propria pra poder ser trocado/mockado nos
-    testes sem precisar de chave de API de verdade.
+    testes sem precisar de chave de API de verdade. Usa o proprio
+    `Perfil` como schema de output estruturado -- os campos batem
+    exatamente com o que precisa ser extraido.
     """
-    client = OpenAI(
-        api_key=os.environ["GROQ_API_KEY"],
-        base_url="https://api.groq.com/openai/v1",
-    )
+    client = anthropic.Anthropic()
     payload = {
         "perfil_atual": perfil_atual,
         "mensagem": texto,
@@ -78,17 +77,14 @@ def _chamar_llm(texto: str, perfil_atual: dict, historico: list[dict] | None = N
     if historico:
         payload["historico"] = historico[-_MAX_HISTORICO_NO_PROMPT:]
 
-    resposta = client.chat.completions.create(
-        model=os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile"),
-        messages=[
-            {"role": "system", "content": PROMPT_EXTRACAO},
-            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
-        ],
-        response_format={"type": "json_object"},
-        temperature=0,
+    resposta = client.messages.parse(
+        model=settings.anthropic_model_extracao,
+        max_tokens=512,
+        system=PROMPT_EXTRACAO,
+        messages=[{"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
+        output_format=Perfil,
     )
-    conteudo = resposta.choices[0].message.content
-    return json.loads(conteudo)
+    return resposta.parsed_output.model_dump()
 
 
 def extrair_perfil(texto: str, perfil_atual: dict, historico: list[dict] | None = None) -> Perfil:
@@ -106,7 +102,7 @@ def extrair_perfil(texto: str, perfil_atual: dict, historico: list[dict] | None 
         bruto = _chamar_llm(texto, perfil_atual, historico)
     except Exception as exc:
         # Só o tipo da exceção -- a mensagem pode embutir uma credencial
-        # vinda do cliente HTTP do Groq (ex: header de Authorization).
+        # vinda do cliente HTTP da Anthropic (ex: header de Authorization).
         logger.error("Falha ao extrair perfil via LLM (%s)", type(exc).__name__)
         return Perfil(**perfil_atual)
 

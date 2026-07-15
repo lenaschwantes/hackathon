@@ -1,6 +1,6 @@
 """
 Testes puros da ponte entre perfil e motor de recomendacao -- nao
-tocam Groq nem nenhuma infraestrutura externa. A chamada ao LLM e
+tocam Anthropic nem nenhuma infraestrutura externa. A chamada ao LLM e
 isolada em `_chamar_llm`, entao os testes de `gerar_recomendacao`
 usam monkeypatch nela, igual `tests/test_profile.py` faz.
 """
@@ -160,7 +160,7 @@ class TestQuerNovaRecomendacao:
 
     def test_falha_no_classificador_nao_bloqueia_e_assume_false(self, monkeypatch):
         def _chamar_llm_com_erro(texto):
-            raise RuntimeError("Groq indisponível")
+            raise RuntimeError("Anthropic indisponível")
 
         monkeypatch.setattr(recommendation, "_chamar_llm_classificador", _chamar_llm_com_erro)
         assert quer_nova_recomendacao("qualquer coisa") is False

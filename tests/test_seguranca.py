@@ -2,7 +2,7 @@
 Suíte de testes de segurança do Decifra.
 
 Convenções:
-- Testes determinísticos (motores mockados: sem Groq, Voyage, Weaviate
+- Testes determinísticos (motores mockados: sem Anthropic, Voyage, Weaviate
   ou Redis de verdade) rodam sempre, inclusive no CI.
 - Testes que dependem do LLM real e/ou do acervo real no Weaviate são
   marcados com `@pytest.mark.integration`. CI roda com
@@ -17,12 +17,14 @@ passar às cegas -- verifique primeiro se é uma vulnerabilidade real
 """
 
 import logging
+import os
 import re
 import socket
 from unittest.mock import AsyncMock, MagicMock
 import asyncio
 
 import pytest
+from dotenv import load_dotenv
 
 from channels import engine
 from channels import rate_limit
@@ -31,6 +33,11 @@ from channels.engine import _MENSAGEM_FALLBACK, responder
 from channels.telegram import TelegramAdapter
 from dialogue.profile import Perfil
 from retrieval.generate import SYSTEM
+
+# Só os testes de integração precisam de credencial real -- carregamos o
+# .env aqui (igual run_bot.py/ask.py já fazem nos seus entrypoints) pra
+# funcionar independente de como o pytest foi invocado.
+load_dotenv()
 
 
 # ---------------------------------------------------------------------------
@@ -117,8 +124,8 @@ def _weaviate_alcancavel() -> bool:
 def _infra_de_integracao_disponivel() -> tuple[bool, str]:
     from config.settings import settings
 
-    if not settings.groq_api_key:
-        return False, "GROQ_API_KEY não configurada no .env"
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        return False, "ANTHROPIC_API_KEY não configurada no .env"
     if not settings.voyage_api_key:
         return False, "VOYAGE_API_KEY não configurada no .env"
     if not _weaviate_alcancavel():
@@ -139,7 +146,7 @@ def infra_real():
 
 
 # ---------------------------------------------------------------------------
-# 1. Fidelidade (recusa correta) -- precisa do RAG real (Weaviate+Groq)
+# 1. Fidelidade (recusa correta) -- precisa do RAG real (Weaviate+Anthropic)
 # ---------------------------------------------------------------------------
 
 
@@ -192,7 +199,7 @@ class TestFidelidade:
         """
         from retrieval.generate import answer
 
-        resultado = answer("Quais são as formas de ingresso nos cursos do IFSC?")
+        resultado = answer("Qual o e-mail de contato do Departamento de Ingresso do IFSC?")
 
         assert not resultado["recusa"], (
             f"controle deveria responder e recusou: {resultado['answer']!r}"
@@ -356,7 +363,7 @@ class TestAbusoDeRecurso:
             f"mensagem de 50000 caracteres chegou inteira "
             f"({recebido.get('tamanho')} chars) no motor de resposta -- não "
             "há nenhum teto de tamanho de input em channels/telegram.py nem "
-            "channels/engine.py. Isso expõe o pipeline (Groq/Voyage, cobrados "
+            "channels/engine.py. Isso expõe o pipeline (Anthropic/Voyage, cobrados "
             "por token) a abuso via mensagens gigantes."
         )
 
@@ -464,7 +471,7 @@ class TestVazamentoDeSegredo:
     def _forcar_erro_no_motor(self, monkeypatch):
         def _answer_com_segredo_na_excecao(texto):
             raise RuntimeError(
-                f"401 client error from Groq, Authorization: Bearer {self._SEGREDO}"
+                f"401 client error from Anthropic, Authorization: Bearer {self._SEGREDO}"
             )
 
         monkeypatch.setattr(engine, "quer_nova_recomendacao", lambda t: False)
@@ -482,7 +489,7 @@ class TestVazamentoDeSegredo:
 
     def test_logs_nao_vazam_segredo(self, monkeypatch, caplog):
         """
-        Se uma lib downstream (cliente HTTP do Groq/Voyage) incluir uma
+        Se uma lib downstream (cliente HTTP do Anthropic/Voyage) incluir uma
         credencial na mensagem da exceção, `logger.exception()` grava o
         traceback completo -- incluindo essa mensagem -- no log de
         aplicação, sem nenhuma redação. Este teste força esse cenário e

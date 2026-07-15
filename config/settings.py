@@ -24,9 +24,12 @@ class Settings(BaseSettings):
     voyage_model: str = "voyage-3"
     voyage_api_key: str = ""
 
-    # LLM (Groq)
-    groq_api_key: str = ""
-    groq_model: str = "llama-3.3-70b-versatile"
+    # LLM (Anthropic) -- a chave (ANTHROPIC_API_KEY) é lida direto do
+    # ambiente pelo SDK oficial, não precisa de campo aqui. Dois modelos:
+    # geração (respostas pro cidadão) usa mais capacidade; extração
+    # (structured output mecânico) usa um modelo mais leve.
+    anthropic_model_geracao: str = "claude-sonnet-5"
+    anthropic_model_extracao: str = "claude-haiku-4-5"
 
     # Broker (opcional, para ingestão assíncrona via Celery)
     rabbitmq_url: str = "amqp://guest:guest@rabbitmq:5672//"

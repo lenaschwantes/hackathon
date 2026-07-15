@@ -7,12 +7,14 @@ verifica se o perfil da pessoa já está completo -- se não estiver,
 conduz a coleta de perfil em vez de responder com o RAG.
 """
 
+import json
 import logging
 import os
 import re
 
-from openai import OpenAI
+import anthropic
 
+from config.settings import settings
 from dialogue.profile import Perfil, determinar_fase, extrair_perfil
 from dialogue.prompts import PROMPT_COLETA
 from dialogue.recommendation import gerar_recomendacao, quer_nova_recomendacao
@@ -29,14 +31,14 @@ _EXTENSOES = (".pdf", ".docx", ".doc", ".odt", ".pptx")
 
 # Teto de tamanho de mensagem: protege qualquer canal que chame
 # responder() (não só o Telegram) contra abuso via mensagem gigante
-# nos motores pagos (Groq/Voyage).
+# nos motores pagos (Anthropic/Voyage).
 _MAX_CARACTERES_MENSAGEM = 4000
 
 
 def _logar_falha(operacao: str, user_id: str, exc: Exception) -> None:
     """
     Loga só o tipo da exceção, nunca sua mensagem nem o traceback: uma
-    lib downstream (cliente HTTP do Groq/Voyage) pode embutir uma
+    lib downstream (cliente HTTP do Anthropic/Voyage) pode embutir uma
     credencial na mensagem de erro, e `logger.exception` gravaria isso
     sem filtro no log de aplicação.
     """
@@ -86,20 +88,18 @@ def _gerar_pergunta_coleta(perfil: Perfil) -> str:
     Usa o LLM pra formular a próxima pergunta de coleta de forma
     acolhedora, com base no que já se sabe e no que ainda falta.
     """
-    client = OpenAI(
-        api_key=os.environ["GROQ_API_KEY"],
-        base_url="https://api.groq.com/openai/v1",
+    client = anthropic.Anthropic()
+    contexto = {
+        "perfil_atual": perfil.model_dump(),
+        "campos_faltantes": perfil.campos_faltantes(),
+    }
+    resposta = client.messages.create(
+        model=settings.anthropic_model_geracao,
+        max_tokens=500,
+        system=PROMPT_COLETA,
+        messages=[{"role": "user", "content": json.dumps(contexto, ensure_ascii=False)}],
     )
-    prompt = PROMPT_COLETA.format(
-        perfil_atual=perfil.model_dump(),
-        campos_faltantes=perfil.campos_faltantes(),
-    )
-    resposta = client.chat.completions.create(
-        model=os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile"),
-        messages=[{"role": "system", "content": prompt}],
-        temperature=0.7,
-    )
-    return resposta.choices[0].message.content
+    return next(b.text for b in resposta.content if b.type == "text")
 
 
 def responder(user_id: str, texto: str, sessao: dict) -> str:

@@ -1,6 +1,6 @@
 """
 Testes puros da parte de recusa em `retrieval/generate.py` -- so testam
-`_fontes_relevantes`, que e pura, sem tocar Groq nem Weaviate. A propria
+`_fontes_relevantes`, que e pura, sem tocar Anthropic nem Weaviate. A propria
 recusa nao e mais uma heuristica de texto: o modelo devolve um campo
 "recusa" no JSON estruturado da resposta (`answer()`), e e esse booleano
 que `_fontes_relevantes` recebe direto -- so um teste de integracao real
