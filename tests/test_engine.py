@@ -84,6 +84,7 @@ class TestPerfilJaCompletoAntesDoTurno:
 
         monkeypatch.setattr(engine, "gerar_recomendacao", _gerar_recomendacao_nao_deveria_ser_chamado)
         monkeypatch.setattr(engine, "quer_nova_recomendacao", lambda texto: False)
+        monkeypatch.setattr(engine, "precisa_busca", lambda texto: True)
         monkeypatch.setattr(
             engine, "answer", lambda texto: {"answer": "A cota é...", "sources": ["edital.pdf"]}
         )
@@ -92,6 +93,39 @@ class TestPerfilJaCompletoAntesDoTurno:
         resposta = responder("user-1", "o que é cota?", sessao)
 
         assert "A cota é..." in resposta
+
+    def test_papo_informal_nao_chama_rag(self, monkeypatch):
+        def _extrair_perfil_nao_deveria_ser_chamado(texto, perfil_atual, historico=None):
+            raise AssertionError("extrair_perfil() não deveria ser chamado em papo informal")
+
+        monkeypatch.setattr(engine, "extrair_perfil", _extrair_perfil_nao_deveria_ser_chamado)
+        monkeypatch.setattr(engine, "quer_nova_recomendacao", lambda texto: False)
+        monkeypatch.setattr(engine, "precisa_busca", lambda texto: False)
+        monkeypatch.setattr(engine, "_gerar_resposta_conversa", lambda texto: "Oi! Tudo bem?")
+
+        def _answer_nao_deveria_ser_chamado(texto):
+            raise AssertionError("answer() não deveria ser chamado em papo informal")
+
+        monkeypatch.setattr(engine, "answer", _answer_nao_deveria_ser_chamado)
+
+        sessao = _sessao(dict(_PERFIL_COMPLETO), fase="completo")
+        resposta = responder("user-1", "oi, tudo bem?", sessao)
+
+        assert resposta == "Oi! Tudo bem?"
+
+    def test_falha_ao_gerar_resposta_de_conversa_cai_no_fallback(self, monkeypatch):
+        monkeypatch.setattr(engine, "quer_nova_recomendacao", lambda texto: False)
+        monkeypatch.setattr(engine, "precisa_busca", lambda texto: False)
+
+        def _gerar_resposta_conversa_com_erro(texto):
+            raise RuntimeError("Anthropic indisponível")
+
+        monkeypatch.setattr(engine, "_gerar_resposta_conversa", _gerar_resposta_conversa_com_erro)
+
+        sessao = _sessao(dict(_PERFIL_COMPLETO), fase="completo")
+        resposta = responder("user-1", "oi", sessao)
+
+        assert resposta == _MENSAGEM_FALLBACK
 
     def test_pedido_explicito_gera_nova_recomendacao_sem_chamar_rag(self, monkeypatch):
         """

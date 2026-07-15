@@ -406,6 +406,7 @@ class TestEntradaMalformada:
     @pytest.mark.parametrize("texto", _CASOS_MALFORMADOS)
     def test_responder_com_perfil_completo_nunca_levanta_excecao(self, monkeypatch, texto):
         monkeypatch.setattr(engine, "quer_nova_recomendacao", lambda t: False)
+        monkeypatch.setattr(engine, "precisa_busca", lambda t: True)
         monkeypatch.setattr(engine, "answer", lambda t: {"answer": "resposta ok", "sources": []})
 
         sessao = _sessao(dict(_PERFIL_COMPLETO), fase="completo")
@@ -475,6 +476,7 @@ class TestVazamentoDeSegredo:
             )
 
         monkeypatch.setattr(engine, "quer_nova_recomendacao", lambda t: False)
+        monkeypatch.setattr(engine, "precisa_busca", lambda t: True)
         monkeypatch.setattr(engine, "answer", _answer_com_segredo_na_excecao)
 
     def test_resposta_ao_usuario_nao_vaza_segredo(self, monkeypatch):

@@ -15,8 +15,9 @@ import re
 import anthropic
 
 from config.settings import settings
+from dialogue.intent import precisa_busca
 from dialogue.profile import Perfil, determinar_fase, extrair_perfil
-from dialogue.prompts import PROMPT_COLETA
+from dialogue.prompts import PROMPT_COLETA, PROMPT_CONVERSA
 from dialogue.recommendation import gerar_recomendacao, quer_nova_recomendacao
 from retrieval.generate import answer
 
@@ -102,6 +103,23 @@ def _gerar_pergunta_coleta(perfil: Perfil) -> str:
     return next(b.text for b in resposta.content if b.type == "text")
 
 
+def _gerar_resposta_conversa(texto: str) -> str:
+    """
+    Usa o LLM pra responder papo informal (saudação, agradecimento,
+    pergunta sobre o próprio bot) sem rodar retrieval nem citar fonte
+    -- roteado aqui por `dialogue.intent.precisa_busca` antes de
+    chegar no RAG.
+    """
+    client = anthropic.Anthropic()
+    resposta = client.messages.create(
+        model=settings.anthropic_model_geracao,
+        max_tokens=200,
+        system=PROMPT_CONVERSA,
+        messages=[{"role": "user", "content": texto}],
+    )
+    return next(b.text for b in resposta.content if b.type == "text")
+
+
 def responder(user_id: str, texto: str, sessao: dict) -> str:
     """
     Recebe o id do usuário, o texto que ele mandou, e a sessão atual.
@@ -118,7 +136,10 @@ def responder(user_id: str, texto: str, sessao: dict) -> str:
     a mensagem atual passa de novo pelo extrator antes de recomendar,
     pra capturar interesse/modalidade diferente do que já estava salvo
     (`interesse` é sugestão, não filtro rígido -- pode mudar a cada
-    pedido). Sem pedido explícito, cai no RAG.
+    pedido). Sem pedido de recomendação, `precisa_busca` decide entre
+    RAG (pergunta real sobre edital) e uma resposta simples de papo
+    informal (saudação, agradecimento, pergunta sobre o próprio bot),
+    sem gastar retrieval nem citar fonte nessa segunda opção.
     """
     texto = texto[:_MAX_CARACTERES_MENSAGEM]
 
@@ -152,6 +173,13 @@ def responder(user_id: str, texto: str, sessao: dict) -> str:
             return gerar_recomendacao(perfil)
         except Exception as exc:
             _logar_falha("gerar nova recomendação", user_id, exc)
+            return _MENSAGEM_FALLBACK
+
+    if not precisa_busca(texto):
+        try:
+            return _gerar_resposta_conversa(texto)
+        except Exception as exc:
+            _logar_falha("gerar resposta de conversa", user_id, exc)
             return _MENSAGEM_FALLBACK
 
     try:
