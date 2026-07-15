@@ -51,11 +51,18 @@ def _marcadores_recusa() -> tuple[str, ...]:
     )
 
 
-class _FakeOpenAI:
-    def __init__(self, *args, **kwargs):
-        self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
+class _FakeAnthropicClient:
+    """
+    Stub do cliente Anthropic real (`retrieval/generate.py` usa
+    `anthropic.Anthropic().messages.parse(..., output_format=_RespostaRAG)`)
+    -- devolve algo com o mesmo formato de `.parsed_output` (`recusa` +
+    `resposta`), sem chamar a API de verdade.
+    """
 
-    def _create(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
+        self.messages = SimpleNamespace(parse=self._parse)
+
+    def _parse(self, *args, **kwargs):
         messages = kwargs.get("messages", [])
         user_content = messages[-1]["content"] if messages else ""
         pergunta = user_content.split("Pergunta:", 1)[-1].strip() if "Pergunta:" in user_content else user_content
@@ -71,12 +78,11 @@ class _FakeOpenAI:
             texto = "A relação entre candidato e vaga segue as regras do processo seletivo descritas no edital."
         elif "resultado preliminar" in pergunta_lower or "resultado final" in pergunta_lower:
             texto = "O resultado preliminar e o resultado final são publicados conforme o cronograma do edital."
-        elif "medicina" in pergunta_lower:
-            texto = "Não encontrei essa informação nos editais que tenho aqui. Recomendo confirmar direto no site oficial do IFSC (ifsc.edu.br)."
         else:
             texto = "Não encontrei essa informação nos editais que tenho aqui. Recomendo confirmar direto no site oficial do IFSC (ifsc.edu.br)."
 
-        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=texto))])
+        recusa = any(m in texto.lower() for m in _marcadores_recusa())
+        return SimpleNamespace(parsed_output=SimpleNamespace(recusa=recusa, resposta=texto))
 
 
 def _fake_hybrid_search(question: str, k: int | None = None):
@@ -110,7 +116,7 @@ def _executa_caso(caso: dict, monkeypatch: pytest.MonkeyPatch):
         return recommendation_module.gerar_recomendacao(perfil, hoje=date(2026, 7, 14))
 
     monkeypatch.setattr(generate_module, "hybrid_search", _fake_hybrid_search)
-    monkeypatch.setattr(generate_module, "OpenAI", _FakeOpenAI)
+    monkeypatch.setattr(generate_module.anthropic, "Anthropic", _FakeAnthropicClient)
     return answer(caso["pergunta"])
 
 
