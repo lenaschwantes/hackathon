@@ -62,10 +62,18 @@ _MARCADORES_RECUSA = (
     "não há nenhuma pergunta clara",
 )
 
+# Só olha pro início da resposta: uma recusa de verdade lidera com o
+# marcador, por instrução do SYSTEM ("diga com clareza que não
+# encontrou..."). Isso evita falso positivo quando uma resposta
+# substantiva (já respondeu e citou fonte) só usa uma frase parecida
+# como ressalva pontual mais adiante -- ex.: "...processo via SISU.
+# Não há informações sobre outras formas de ingresso além dessas."
+_JANELA_RECUSA_CARACTERES = 200
+
 
 def _eh_recusa(texto: str) -> bool:
     """Heurística: a resposta soa como recusa (não se ancorou nos trechos)?"""
-    texto_lower = (texto or "").lower()
+    texto_lower = (texto or "")[:_JANELA_RECUSA_CARACTERES].lower()
     return any(marcador in texto_lower for marcador in _MARCADORES_RECUSA)
 
 

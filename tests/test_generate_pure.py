@@ -24,6 +24,32 @@ class TestEhRecusa:
         assert not _eh_recusa("")
         assert not _eh_recusa(None)
 
+    def test_ressalva_pontual_apos_resposta_substantiva_nao_e_recusa(self):
+        # Caso real observado: o modelo respondeu e citou os dois editais
+        # por nome, e só perto do final usa uma frase parecida com
+        # marcador de recusa como ressalva sobre um sub-tópico -- isso
+        # não pode apagar a resposta (nem esconder a fonte) inteira.
+        texto = (
+            "De acordo com os trechos do edital fornecidos, há menção a dois "
+            "processos seletivos: 1. O Edital 05_2026_2-Cadastro-de-Reserva-ok."
+            "odt.pdf, que trata do processo seletivo simplificado para formação "
+            "de cadastro de reserva para cursos de graduação do IFSC. 2. O "
+            "Edital Sisu 2026 completo.pdf, que se refere ao processo seletivo "
+            "via Sistema de Seleção Unificada (SISU) para ingresso nos cursos "
+            "superiores do IFSC. Não há informações sobre outras formas de "
+            "ingresso além desses dois processos seletivos nos trechos "
+            "fornecidos."
+        )
+        assert not _eh_recusa(texto)
+
+    def test_recusa_no_comeco_da_resposta_longa_ainda_e_detectada(self):
+        texto = (
+            "Não encontrei essa informação nos editais que tenho aqui. "
+            "Recomendo confirmar direto no site oficial do IFSC (ifsc.edu.br). "
+            + "Detalhe adicional irrelevante repetido só pra alongar o texto. " * 5
+        )
+        assert _eh_recusa(texto)
+
 
 class TestFontesRelevantes:
     def test_recusa_nunca_tem_fonte(self):
