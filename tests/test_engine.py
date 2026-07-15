@@ -73,14 +73,11 @@ class TestPerfilCompletaNesteTurno:
 
 
 class TestPerfilJaCompletoAntesDoTurno:
-    def _mocks_que_nao_deveriam_rodar(self, monkeypatch):
+    def test_pergunta_normal_cai_no_rag_sem_recomendar_de_novo(self, monkeypatch):
         def _extrair_perfil_nao_deveria_ser_chamado(texto, perfil_atual, historico=None):
-            raise AssertionError("extrair_perfil() não deveria ser chamado com perfil já completo")
+            raise AssertionError("extrair_perfil() não deveria ser chamado numa pergunta normal (RAG)")
 
         monkeypatch.setattr(engine, "extrair_perfil", _extrair_perfil_nao_deveria_ser_chamado)
-
-    def test_pergunta_normal_cai_no_rag_sem_recomendar_de_novo(self, monkeypatch):
-        self._mocks_que_nao_deveriam_rodar(monkeypatch)
 
         def _gerar_recomendacao_nao_deveria_ser_chamado(perfil):
             raise AssertionError("gerar_recomendacao() não deveria ser chamado de novo")
@@ -97,7 +94,14 @@ class TestPerfilJaCompletoAntesDoTurno:
         assert "A cota é..." in resposta
 
     def test_pedido_explicito_gera_nova_recomendacao_sem_chamar_rag(self, monkeypatch):
-        self._mocks_que_nao_deveriam_rodar(monkeypatch)
+        """
+        Pedido de nova recomendação passa a mensagem de novo pelo
+        extrator antes de recomendar -- interesse/modalidade funcionam
+        como sugestão atualizável, não um valor fixo desde a coleta.
+        """
+        monkeypatch.setattr(
+            engine, "extrair_perfil", lambda texto, perfil_atual, historico=None: Perfil(**perfil_atual)
+        )
 
         def _answer_nao_deveria_ser_chamado(texto):
             raise AssertionError("answer() não deveria ser chamado quando a pessoa pede nova recomendação")
@@ -111,8 +115,36 @@ class TestPerfilJaCompletoAntesDoTurno:
 
         assert resposta == "Que tal essa outra opção?"
 
+    def test_pedido_de_nova_recomendacao_atualiza_interesse_mencionado(self, monkeypatch):
+        """
+        Se a pessoa pede outra opção mencionando uma área diferente da
+        que já estava salva, essa área nova chega em gerar_recomendacao
+        e fica persistida na sessão -- não trava no interesse original.
+        """
+        capturado = {}
+
+        def fake_extrair_perfil(texto, perfil_atual, historico=None):
+            return Perfil(**{**perfil_atual, "interesse": "tecnologia"})
+
+        def fake_gerar_recomendacao(perfil):
+            capturado["interesse"] = perfil.interesse
+            return "Achei opções de tecnologia pra você!"
+
+        monkeypatch.setattr(engine, "extrair_perfil", fake_extrair_perfil)
+        monkeypatch.setattr(engine, "quer_nova_recomendacao", lambda texto: True)
+        monkeypatch.setattr(engine, "gerar_recomendacao", fake_gerar_recomendacao)
+
+        sessao = _sessao(dict(_PERFIL_COMPLETO), fase="completo")
+        resposta = responder("user-1", "tem opção de tecnologia?", sessao)
+
+        assert resposta == "Achei opções de tecnologia pra você!"
+        assert capturado["interesse"] == "tecnologia"
+        assert sessao["perfil"]["interesse"] == "tecnologia"
+
     def test_falha_ao_gerar_nova_recomendacao_cai_no_fallback(self, monkeypatch):
-        self._mocks_que_nao_deveriam_rodar(monkeypatch)
+        monkeypatch.setattr(
+            engine, "extrair_perfil", lambda texto, perfil_atual, historico=None: Perfil(**perfil_atual)
+        )
 
         def _gerar_recomendacao_com_erro(perfil):
             raise RuntimeError("Anthropic indisponível")

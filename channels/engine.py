@@ -114,8 +114,11 @@ def responder(user_id: str, texto: str, sessao: dict) -> str:
     perfil acaba de ficar completo neste turno, devolve a recomendação
     do motor estruturado (`recommend/opportunities.py`). Com o perfil
     já completo de antes, uma nova recomendação só é gerada se a
-    pessoa pedir explicitamente (`quer_nova_recomendacao`); caso
-    contrário cai no RAG.
+    pessoa pedir explicitamente (`quer_nova_recomendacao`); nesse caso,
+    a mensagem atual passa de novo pelo extrator antes de recomendar,
+    pra capturar interesse/modalidade diferente do que já estava salvo
+    (`interesse` é sugestão, não filtro rígido -- pode mudar a cada
+    pedido). Sem pedido explícito, cai no RAG.
     """
     texto = texto[:_MAX_CARACTERES_MENSAGEM]
 
@@ -143,6 +146,9 @@ def responder(user_id: str, texto: str, sessao: dict) -> str:
 
     if quer_nova_recomendacao(texto):
         try:
+            historico = sessao.get("historico") or []
+            perfil = extrair_perfil(texto, perfil.model_dump(), historico=historico)
+            sessao["perfil"] = perfil.model_dump()
             return gerar_recomendacao(perfil)
         except Exception as exc:
             _logar_falha("gerar nova recomendação", user_id, exc)
