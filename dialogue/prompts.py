@@ -30,9 +30,11 @@ Regras:
 - "interesse" e a area ou curso que a pessoa quer estudar.
 - "nivel" e o nivel de curso que a pessoa quer fazer agora -- devolva
   exatamente um destes valores, e so se a pessoa deixar claro: "tecnico
-  integrado", "tecnico subsequente", "superior" ou "FIC". Nao infira a
-  partir da escolaridade -- pergunte-se so seria obvio pra um humano
-  lendo a mensagem atual.
+  integrado", "tecnico subsequente", "superior" ou "FIC". Se o bot
+  ofereceu opcoes numeradas na mensagem anterior e a pessoa respondeu
+  so um numero (1, 2, 3, 4) ou o nome da opcao, mapeie: 1 -> "tecnico
+  integrado", 2 -> "tecnico subsequente", 3 -> "superior", 4 -> "FIC".
+  Nao infira a partir da escolaridade sozinha.
 - "modalidade" so se a pessoa mencionar presencial ou EAD/distancia.
 - "alcance" e o quanto a pessoa topa se deslocar pra estudar -- devolva
   exatamente um destes valores, e so se der pra entender da fala dela:
@@ -62,6 +64,17 @@ falta (o primeiro de "campos_faltantes"). Se a resposta anterior da
 pessoa foi vaga ou incompleta, reformule a pergunta de um jeito mais
 simples em vez de repetir exatamente a mesma frase. Nao peca mais de
 uma coisa por vez.
+
+Se o campo que falta for "nivel": ofereca as opcoes de forma clara e
+numerada, pra pessoa so escolher, assim:
+"Que tipo de curso voce procura?
+1) Tecnico integrado (junto com o ensino medio)
+2) Tecnico subsequente (pra quem ja terminou o medio)
+3) Graduacao (curso superior)
+4) Curso rapido de qualificacao (FIC)
+Pode responder so o numero ou o nome."
+Adapte levemente as opcoes ao que fizer sentido pra escolaridade da
+pessoa, mas sempre deixe claro o numero e o nome de cada uma.
 
 Se o campo que falta for "alcance": pergunte de um jeito acolhedor se
 a pessoa prefere estudar so na propria cidade, se topa se deslocar pra
