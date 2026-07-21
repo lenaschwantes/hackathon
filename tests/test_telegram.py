@@ -63,6 +63,14 @@ def _fake_context():
     return context
 
 
+def _fake_update_comando(user_id: int):
+    """Duck-type mínimo do `telegram.Update` pra um comando (ex.: /start)."""
+    update = MagicMock()
+    update.effective_user.id = user_id
+    update.message.reply_text = AsyncMock()
+    return update
+
+
 def _sessao(perfil: dict, fase: str = "coletando") -> dict:
     return {"perfil": perfil, "fase_dialogo": fase, "historico": []}
 
@@ -213,3 +221,76 @@ class TestComportamentoDoTeclado:
         teclado = kwargs["reply_markup"]
         assert [b.callback_data for b in teclado.inline_keyboard[0]] == ["x", "y"]
         assert [b.text for b in teclado.inline_keyboard[0]] == ["A", "B"]
+
+
+class TestBotoesDeInicio:
+    def test_botao_buscar_curso_usa_texto_sintetico_buscar(self, fake_redis, monkeypatch):
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "dummy:token-para-teste")
+        capturado = {}
+
+        def fake_responder(user_id, texto, sessao, nivel_escolhido=None):
+            capturado["texto"] = texto
+            return "Em qual cidade você mora?"
+
+        adapter = TelegramAdapter(responder=fake_responder)
+
+        async def cenario():
+            await _salvar_sessao_inicial("61", {"perfil": {}, "fase_dialogo": "inicio", "historico": []})
+            update = _fake_callback_update(user_id=61, data=engine.CALLBACK_INICIO_BUSCAR)
+            await adapter._ao_receber_botao(update, _fake_context())
+
+        asyncio.run(cenario())
+
+        assert capturado["texto"] == "quero buscar um curso"
+
+    def test_botao_tenho_duvida_usa_texto_sintetico_duvida(self, fake_redis, monkeypatch):
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "dummy:token-para-teste")
+        capturado = {}
+
+        def fake_responder(user_id, texto, sessao, nivel_escolhido=None):
+            capturado["texto"] = texto
+            return "Pode perguntar!"
+
+        adapter = TelegramAdapter(responder=fake_responder)
+
+        async def cenario():
+            await _salvar_sessao_inicial("62", {"perfil": {}, "fase_dialogo": "inicio", "historico": []})
+            update = _fake_callback_update(user_id=62, data=engine.CALLBACK_INICIO_DUVIDA)
+            await adapter._ao_receber_botao(update, _fake_context())
+
+        asyncio.run(cenario())
+
+        assert capturado["texto"] == "tenho uma duvida"
+
+
+class TestComandoStart:
+    def test_start_mostra_o_menu_inicial(self, fake_redis, monkeypatch):
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "dummy:token-para-teste")
+        adapter = TelegramAdapter(responder=lambda user_id, texto, sessao, nivel_escolhido=None: "não deveria ser chamado")
+
+        update = _fake_update_comando(user_id=63)
+        asyncio.run(adapter._ao_receber_start(update, _fake_context()))
+
+        update.message.reply_text.assert_awaited_once()
+        args, kwargs = update.message.reply_text.call_args
+        assert args[0] == engine._MENSAGEM_MENU_INICIAL
+        teclado = kwargs["reply_markup"]
+        assert [b.text for linha in teclado.inline_keyboard for b in linha] == ["Buscar um curso", "Tenho uma dúvida"]
+
+    def test_start_nao_apaga_perfil_existente_so_reabre_a_bifurcacao(self, fake_redis, monkeypatch):
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "dummy:token-para-teste")
+        adapter = TelegramAdapter(responder=lambda user_id, texto, sessao, nivel_escolhido=None: "ok")
+
+        async def cenario():
+            await _salvar_sessao_inicial("64", _sessao(dict(_PERFIL_COMPLETO), fase="completo"))
+            update = _fake_update_comando(user_id=64)
+            await adapter._ao_receber_start(update, _fake_context())
+
+            from channels.session import carregar_sessao
+
+            return await carregar_sessao("64")
+
+        sessao_depois = asyncio.run(cenario())
+
+        assert sessao_depois["fase_dialogo"] == "inicio"
+        assert sessao_depois["perfil"] == _PERFIL_COMPLETO

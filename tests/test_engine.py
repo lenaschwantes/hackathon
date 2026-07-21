@@ -457,6 +457,117 @@ class TestBotoesDeReinicio:
         assert resposta.botoes == engine._BOTOES_REINICIO
 
 
+def _sessao_inicio() -> dict:
+    return {"perfil": {}, "fase_dialogo": "inicio", "historico": []}
+
+
+class TestBifurcacaoInicial:
+    """
+    Sessao nova (fase_dialogo == "inicio") nunca resolveu a
+    bifurcacao entre buscar curso, tirar duvida, ou nao decidiu ainda
+    -- ver `channels/engine.py::responder`.
+    """
+
+    def test_pergunta_direta_pula_o_menu_e_responde_via_rag(self, monkeypatch):
+        def _extrair_perfil_nao_deveria_ser_chamado(texto, perfil_atual, historico=None):
+            raise AssertionError("extrair_perfil não deveria ser chamado numa pergunta direta")
+
+        monkeypatch.setattr(engine, "extrair_perfil", _extrair_perfil_nao_deveria_ser_chamado)
+        monkeypatch.setattr(engine, "quer_nova_recomendacao", lambda texto: False)
+        monkeypatch.setattr(engine, "precisa_busca", lambda texto: True)
+        monkeypatch.setattr(engine, "answer", lambda texto: {"answer": "A inscrição fecha em 20/08.", "sources": []})
+
+        sessao = _sessao_inicio()
+        resposta = responder("user-1", "quando fecha a inscrição do edital X?", sessao)
+
+        assert "A inscrição fecha em 20/08." in resposta
+        assert sessao["fase_dialogo"] == "conversa_livre"
+
+    def test_texto_ambiguo_mostra_o_menu_inicial(self, monkeypatch):
+        monkeypatch.setattr(engine, "quer_nova_recomendacao", lambda texto: False)
+        monkeypatch.setattr(engine, "precisa_busca", lambda texto: False)
+
+        sessao = _sessao_inicio()
+        resposta = responder("user-1", "oi", sessao)
+
+        assert resposta == engine._MENSAGEM_MENU_INICIAL
+        assert resposta.botoes == engine._BOTOES_INICIO
+        assert sessao["fase_dialogo"] == "inicio"
+
+    def test_texto_livre_de_pedido_de_curso_inicia_coleta(self, monkeypatch):
+        monkeypatch.setattr(engine, "quer_nova_recomendacao", lambda texto: True)
+        monkeypatch.setattr(engine, "extrair_perfil", lambda texto, perfil_atual, historico=None: Perfil(**perfil_atual))
+        monkeypatch.setattr(engine, "_gerar_pergunta_coleta", lambda perfil: "Em qual cidade você mora?")
+
+        sessao = _sessao_inicio()
+        resposta = responder("user-1", "quero achar um curso", sessao)
+
+        assert resposta == "Em qual cidade você mora?"
+        assert sessao["fase_dialogo"] == "coletando"
+
+    def test_botao_buscar_curso_inicia_coleta_sem_chamar_classificador(self, monkeypatch):
+        def _classificador_nao_deveria_ser_chamado(texto):
+            raise AssertionError("quer_nova_recomendacao não deveria ser chamado pro botão sintético")
+
+        monkeypatch.setattr(engine, "quer_nova_recomendacao", _classificador_nao_deveria_ser_chamado)
+        monkeypatch.setattr(engine, "extrair_perfil", lambda texto, perfil_atual, historico=None: Perfil(**perfil_atual))
+        monkeypatch.setattr(engine, "_gerar_pergunta_coleta", lambda perfil: "Em qual cidade você mora?")
+
+        sessao = _sessao_inicio()
+        resposta = responder("user-1", "quero buscar um curso", sessao)
+
+        assert resposta == "Em qual cidade você mora?"
+        assert sessao["fase_dialogo"] == "coletando"
+
+    def test_botao_tenho_duvida_entra_em_conversa_livre_sem_chamar_classificador(self, monkeypatch):
+        def _classificador_nao_deveria_ser_chamado(texto):
+            raise AssertionError("nenhum classificador deveria ser chamado pro botão sintético de dúvida")
+
+        monkeypatch.setattr(engine, "quer_nova_recomendacao", _classificador_nao_deveria_ser_chamado)
+        monkeypatch.setattr(engine, "precisa_busca", _classificador_nao_deveria_ser_chamado)
+
+        sessao = _sessao_inicio()
+        resposta = responder("user-1", "tenho uma duvida", sessao)
+
+        assert resposta == engine._MENSAGEM_CONVITE_DUVIDA
+        assert sessao["fase_dialogo"] == "conversa_livre"
+
+    def test_conversa_livre_ja_estabelecida_responde_via_rag_sem_extrair_perfil(self, monkeypatch):
+        def _extrair_perfil_nao_deveria_ser_chamado(texto, perfil_atual, historico=None):
+            raise AssertionError("extrair_perfil não deveria ser chamado em conversa_livre")
+
+        monkeypatch.setattr(engine, "extrair_perfil", _extrair_perfil_nao_deveria_ser_chamado)
+        monkeypatch.setattr(engine, "quer_nova_recomendacao", lambda texto: False)
+        monkeypatch.setattr(engine, "precisa_busca", lambda texto: True)
+        monkeypatch.setattr(engine, "answer", lambda texto: {"answer": "resposta do RAG", "sources": []})
+
+        sessao = {"perfil": {}, "fase_dialogo": "conversa_livre", "historico": []}
+        resposta = responder("user-1", "quais documentos preciso?", sessao)
+
+        assert "resposta do RAG" in resposta
+        assert sessao["fase_dialogo"] == "conversa_livre"
+
+    def test_saida_de_escape_migra_conversa_livre_pra_coleta(self, monkeypatch):
+        def _gerar_recomendacao_nao_deveria_ser_chamado(perfil):
+            raise AssertionError("gerar_recomendacao não deveria ser chamado com perfil incompleto")
+
+        monkeypatch.setattr(engine, "gerar_recomendacao", _gerar_recomendacao_nao_deveria_ser_chamado)
+        monkeypatch.setattr(engine, "quer_nova_recomendacao", lambda texto: True)
+        monkeypatch.setattr(
+            engine,
+            "extrair_perfil",
+            lambda texto, perfil_atual, historico=None: Perfil(cidade="Blumenau"),
+        )
+        monkeypatch.setattr(engine, "_gerar_pergunta_coleta", lambda perfil: "Qual sua escolaridade?")
+
+        sessao = {"perfil": {}, "fase_dialogo": "conversa_livre", "historico": []}
+        resposta = responder("user-1", "quero uma recomendação de curso", sessao)
+
+        assert resposta == "Qual sua escolaridade?"
+        assert sessao["fase_dialogo"] == "coletando"
+        assert sessao["perfil"]["cidade"] == "Blumenau"
+
+
 class TestTetoDeMensagem:
     def test_mensagem_gigante_e_truncada_antes_de_qualquer_coisa(self, monkeypatch):
         capturado = {}

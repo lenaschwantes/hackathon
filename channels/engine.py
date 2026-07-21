@@ -4,7 +4,9 @@ Motor de resposta real, ligando o canal ao RAG.
 Este arquivo é o único adaptador entre um canal (Telegram, etc) e o
 motor de verdade (`retrieval.generate.answer`). Antes de chamar o RAG,
 verifica se há um pedido de reinício em andamento ou recém-feito (pode
-ocorrer em qualquer ponto da conversa); em seguida, se o perfil da
+ocorrer em qualquer ponto da conversa); numa sessão nova, resolve
+primeiro a bifurcação inicial (buscar curso vs. só tirar uma dúvida,
+sem obrigar coleta de perfil pra isso); em seguida, se o perfil da
 pessoa já está completo -- se não estiver, conduz a coleta de perfil
 em vez de responder com o RAG.
 """
@@ -19,6 +21,12 @@ import anthropic
 
 from config.settings import settings
 from dialogue.intent import precisa_busca
+from dialogue.onboarding import (
+    CALLBACK_INICIO_BUSCAR,
+    CALLBACK_INICIO_DUVIDA,
+    TEXTO_SINTETICO_BUSCAR_CURSO,
+    TEXTO_SINTETICO_TENHO_DUVIDA,
+)
 from dialogue.profile import OPCOES_NIVEL, Perfil, determinar_fase, extrair_perfil
 from dialogue.prompts import PROMPT_COLETA, PROMPT_CONVERSA, PROMPT_CONFIRMACAO_REINICIO
 from dialogue.recommendation import gerar_recomendacao, quer_nova_recomendacao
@@ -77,6 +85,21 @@ _BOTOES_REINICIO: list[list[Botao]] = [
     [Botao("Manter meus dados", CALLBACK_REINICIO_CANCELAR)],
     [Botao("Apagar tudo e recomeçar", CALLBACK_REINICIO_CONFIRMAR)],
 ]
+
+_BOTOES_INICIO: list[list[Botao]] = [
+    [Botao("Buscar um curso", CALLBACK_INICIO_BUSCAR)],
+    [Botao("Tenho uma dúvida", CALLBACK_INICIO_DUVIDA)],
+]
+
+_MENSAGEM_MENU_INICIAL = (
+    "Oi! Eu sou o Decifra 😊 Ajudo você a encontrar cursos gratuitos em "
+    "institutos federais e a entender editais do IFSC. Como posso te ajudar agora?"
+)
+
+_MENSAGEM_CONVITE_DUVIDA = (
+    "Pode perguntar! Sobre prazo, documento, requisito, o que for -- é só "
+    "mandar. E se quiser uma recomendação de curso mais pra frente, também é só pedir."
+)
 
 _MENSAGEM_FALLBACK = (
     "Desculpa, tive um problema pra buscar essa informação agora. "
@@ -194,6 +217,34 @@ def _gerar_confirmacao_reinicio(texto: str) -> str:
     return next(b.text for b in resposta.content if b.type == "text")
 
 
+def _responder_via_rag(user_id: str, texto: str) -> str:
+    """
+    Chama o RAG (`retrieval.generate.answer`) e formata a resposta com
+    as fontes citadas. Isolado numa funcao propria pra poder ser
+    chamado tanto no fim do fluxo normal (perfil completo/conversa
+    livre, pergunta nao-informal) quanto direto na bifurcacao inicial
+    (`responder()`) quando a primeira mensagem ja e uma pergunta real
+    -- sem essa funcao, os dois pontos de chamada re-avaliariam
+    `precisa_busca`/`quer_nova_recomendacao` a toa.
+    """
+    try:
+        resultado = answer(texto)
+    except Exception as exc:
+        _logar_falha("chamar answer()", user_id, exc)
+        return _MENSAGEM_FALLBACK
+
+    texto_resposta = (resultado or {}).get("answer")
+    if not texto_resposta:
+        logger.error("answer() devolveu resposta vazia para user_id=%s", user_id)
+        return _MENSAGEM_FALLBACK
+
+    sources = (resultado or {}).get("sources")
+    if sources:
+        return f"{texto_resposta}\n\n{_formatar_fontes(sources)}"
+
+    return texto_resposta
+
+
 def _com_botoes_de_nivel(pergunta: str, perfil: Perfil) -> str | Resposta:
     """
     Envolve a pergunta de coleta com os botões de nível quando "nivel"
@@ -237,14 +288,27 @@ def responder(
     incorretamente qualquer perfil incompleto direto pra fase
     "completo".
 
-    Se o perfil ainda não estiver completo, extrai o que der da
-    mensagem (com o histórico recente como contexto pra resolver
-    referências tipo "e advogado?"), atualiza a sessão (in-place --
-    quem chama esta função é responsável por persistir a sessão de
-    volta no Redis) e devolve a próxima pergunta de coleta. Quando o
-    perfil acaba de ficar completo neste turno, devolve a recomendação
-    do motor estruturado (`recommend/opportunities.py`). Com o perfil
-    já completo de antes, uma nova recomendação só é gerada se a
+    Em seguida, se `fase_dialogo == "inicio"` (sessão nova, nunca
+    processou mensagem nenhuma), resolve a bifurcação inicial: pergunta
+    direta sobre edital pula a coleta e vai pro RAG direto
+    (`fase_dialogo` vira "conversa_livre" -- perfil fica vazio, toda
+    mensagem futura é tratada como candidata a RAG); pedido de
+    recomendação (texto livre ou botão) entra na coleta normal
+    (`fase_dialogo` vira "coletando"); qualquer outra coisa (saudação,
+    texto ambíguo) mostra um menu com botões. Alguém em "conversa_livre"
+    que depois pede uma recomendação (`quer_nova_recomendacao`) migra
+    pra coleta na hora, mesmo com o perfil ainda vazio -- nunca fica
+    sem essa saída.
+
+    Se o perfil ainda não estiver completo (e não estiver em
+    "conversa_livre"), extrai o que der da mensagem (com o histórico
+    recente como contexto pra resolver referências tipo "e advogado?"),
+    atualiza a sessão (in-place -- quem chama esta função é responsável
+    por persistir a sessão de volta no Redis) e devolve a próxima
+    pergunta de coleta. Quando o perfil acaba de ficar completo neste
+    turno, devolve a recomendação do motor estruturado
+    (`recommend/opportunities.py`). Com o perfil já completo de antes
+    (ou em "conversa_livre"), uma nova recomendação só é gerada se a
     pessoa pedir explicitamente (`quer_nova_recomendacao`); nesse caso,
     a mensagem atual passa de novo pelo extrator antes de recomendar,
     pra capturar interesse/modalidade diferente do que já estava salvo
@@ -314,10 +378,44 @@ def responder(
                     return Resposta(_MENSAGEM_FALLBACK_CONFIRMACAO_REINICIO, botoes=_BOTOES_REINICIO)
                 return Resposta(pergunta, botoes=_BOTOES_REINICIO)
 
+        # Bifurcacao inicial: sessao nova (fase_dialogo == "inicio",
+        # default de carregar_sessao) nunca passou por essa decisao
+        # ainda. Sem isso, toda conversa nova entra direto em coleta
+        # de perfil, mesmo quando a primeira mensagem ja e uma
+        # pergunta direta sobre edital -- obrigando a pessoa a
+        # responder cidade/escolaridade/etc antes de conseguir
+        # perguntar o que queria. Os textos sinteticos dos botoes
+        # ("quero buscar um curso"/"tenho uma duvida") usam == direto,
+        # deterministico, igual nivel_escolhido/TEXTO_SINTETICO_* do
+        # reinicio -- nunca depende de um classificador pago adivinhar
+        # certo pra algo que a propria UI ja sabe. Texto livre organico
+        # continua passando pelos classificadores de verdade
+        # (quer_nova_recomendacao, precisa_busca -- ja existentes, sem
+        # nenhum classificador novo).
+        if sessao.get("fase_dialogo") == "inicio":
+            if texto == TEXTO_SINTETICO_TENHO_DUVIDA:
+                sessao["fase_dialogo"] = "conversa_livre"
+                return _MENSAGEM_CONVITE_DUVIDA
+
+            quer_recomendacao = texto == TEXTO_SINTETICO_BUSCAR_CURSO or quer_nova_recomendacao(texto)
+            if quer_recomendacao:
+                sessao["fase_dialogo"] = "coletando"
+                # cai no fluxo normal abaixo, que ja inicia a coleta
+            elif precisa_busca(texto):
+                # Pergunta direta de cara -- ja sabemos que nao e
+                # pedido de recomendacao (quer_recomendacao acima) nem
+                # duvida generica, entao responde via RAG direto aqui,
+                # sem cair no fluxo normal (que re-chamaria
+                # quer_nova_recomendacao/precisa_busca a toa).
+                sessao["fase_dialogo"] = "conversa_livre"
+                return _responder_via_rag(user_id, texto)
+            else:
+                return Resposta(_MENSAGEM_MENU_INICIAL, botoes=_BOTOES_INICIO)
+
     perfil_atual = sessao.get("perfil") or {}
     perfil = Perfil(**perfil_atual)
 
-    if determinar_fase(perfil) != "completo":
+    if sessao.get("fase_dialogo") != "conversa_livre" and determinar_fase(perfil) != "completo":
         historico = sessao.get("historico") or []
         if nivel_escolhido:
             perfil = Perfil(**{**perfil_atual, "nivel": nivel_escolhido})
@@ -345,6 +443,15 @@ def responder(
             historico = sessao.get("historico") or []
             perfil = extrair_perfil(texto, perfil.model_dump(), historico=historico)
             sessao["perfil"] = perfil.model_dump()
+            # Saida de escape do "conversa_livre": a pessoa que tinha
+            # pulado a coleta (ou ainda estava com perfil incompleto)
+            # pode pedir uma recomendacao a qualquer momento -- migra
+            # pra coleta normal em vez de tentar recomendar com dado
+            # faltando.
+            if determinar_fase(perfil) != "completo":
+                sessao["fase_dialogo"] = "coletando"
+                pergunta = _gerar_pergunta_coleta(perfil)
+                return _com_botoes_de_nivel(pergunta, perfil)
             return gerar_recomendacao(perfil)
         except Exception as exc:
             _logar_falha("gerar nova recomendação", user_id, exc)
@@ -357,19 +464,4 @@ def responder(
             _logar_falha("gerar resposta de conversa", user_id, exc)
             return _MENSAGEM_FALLBACK
 
-    try:
-        resultado = answer(texto)
-    except Exception as exc:
-        _logar_falha("chamar answer()", user_id, exc)
-        return _MENSAGEM_FALLBACK
-
-    texto_resposta = (resultado or {}).get("answer")
-    if not texto_resposta:
-        logger.error("answer() devolveu resposta vazia para user_id=%s", user_id)
-        return _MENSAGEM_FALLBACK
-
-    sources = (resultado or {}).get("sources")
-    if sources:
-        return f"{texto_resposta}\n\n{_formatar_fontes(sources)}"
-
-    return texto_resposta
+    return _responder_via_rag(user_id, texto)

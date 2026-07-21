@@ -12,16 +12,23 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
+    CommandHandler,
     ContextTypes,
     MessageHandler,
     filters,
 )
 
 from channels.base import ChannelAdapter
-from channels.engine import _MAX_CARACTERES_MENSAGEM, Botao
+from channels.engine import _BOTOES_INICIO, _MAX_CARACTERES_MENSAGEM, _MENSAGEM_MENU_INICIAL, Botao
 from channels.engine import responder as fake_responder
 from channels.rate_limit import MENSAGEM_LIMITE_EXCEDIDO, eh_duplicada, permitido
 from channels.session import carregar_sessao, salvar_sessao
+from dialogue.onboarding import (
+    CALLBACK_INICIO_BUSCAR,
+    CALLBACK_INICIO_DUVIDA,
+    TEXTO_SINTETICO_BUSCAR_CURSO,
+    TEXTO_SINTETICO_TENHO_DUVIDA,
+)
 from dialogue.profile import OPCOES_NIVEL
 from dialogue.reset import (
     CALLBACK_REINICIO_CANCELAR,
@@ -53,10 +60,36 @@ class TelegramAdapter(ChannelAdapter):
         token = os.environ["TELEGRAM_BOT_TOKEN"]
         self._responder = responder or fake_responder
         self._app = Application.builder().token(token).build()
+        self._app.add_handler(CommandHandler("start", self._ao_receber_start))
         self._app.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self._ao_receber)
         )
         self._app.add_handler(CallbackQueryHandler(self._ao_receber_botao))
+
+    async def _ao_receber_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        `/start` e o gesto padrao do Telegram pra comecar (ou
+        recomecar) a interagir com um bot -- o `MessageHandler` normal
+        nunca ve isso, `filters.TEXT & ~filters.COMMAND` exclui
+        comandos de proposito. Mostra o menu de abertura direto, sem
+        precisar de nenhum classificador (a pessoa ja deixou a intencao
+        clara so de mandar o comando). Nao apaga perfil nem historico
+        -- isso e papel do reinicio "apagar tudo" (botao/texto
+        dedicado); `/start` so marca `fase_dialogo` de volta pra
+        "inicio", pra a proxima mensagem ou toque de botao resolver a
+        bifurcacao normalmente (ver `channels/engine.py::responder`).
+        """
+        user_id = str(update.effective_user.id)
+
+        if not await permitido(user_id):
+            await update.message.reply_text(MENSAGEM_LIMITE_EXCEDIDO)
+            return
+
+        sessao = await carregar_sessao(user_id)
+        sessao["fase_dialogo"] = "inicio"
+        await salvar_sessao(user_id, sessao)
+
+        await update.message.reply_text(_MENSAGEM_MENU_INICIAL, reply_markup=_montar_teclado(_BOTOES_INICIO))
 
     async def _ao_receber(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
@@ -124,6 +157,11 @@ class TelegramAdapter(ChannelAdapter):
         elif data in (CALLBACK_REINICIO_CONFIRMAR, CALLBACK_REINICIO_CANCELAR):
             texto_usuario = (
                 TEXTO_SINTETICO_CONFIRMAR if data == CALLBACK_REINICIO_CONFIRMAR else TEXTO_SINTETICO_CANCELAR
+            )
+            resposta = self._responder(user_id, texto_usuario, sessao)
+        elif data in (CALLBACK_INICIO_BUSCAR, CALLBACK_INICIO_DUVIDA):
+            texto_usuario = (
+                TEXTO_SINTETICO_BUSCAR_CURSO if data == CALLBACK_INICIO_BUSCAR else TEXTO_SINTETICO_TENHO_DUVIDA
             )
             resposta = self._responder(user_id, texto_usuario, sessao)
         else:

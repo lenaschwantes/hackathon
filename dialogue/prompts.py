@@ -207,7 +207,10 @@ Exemplos que PRECISAM do motor estruturado (responda true): "mostra
 outra opcao", "tem mais algum curso?", "e em outra modalidade?", "nao
 gostei desse, tem outro?", "quais editais estao abertos?", "tem algum
 curso com inscricao aberta agora?", "quais cursos tem vaga pra mim
-agora?".
+agora?". Isso inclui pedido de recomendacao de primeira viagem, sem
+nenhuma recomendacao anterior na conversa -- ex: "quero uma
+recomendacao de curso", "me indica um curso", "na verdade eu quero
+buscar um curso", "voce pode me ajudar a achar um curso?".
 
 Exemplos de pergunta normal, que NAO precisam do motor estruturado
 (responda false): "quando fecha a inscricao?", "o que e cota?",
