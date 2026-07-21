@@ -44,7 +44,7 @@ class TelegramAdapter(ChannelAdapter):
 
         if await eh_duplicada(user_id, texto):
             await update.message.reply_text(
-                "Já vi essa mensagem. Dá um tempinho e tenta de novo, por favor."
+                "Já tô cuidando disso pra você! Me dá um instante."
             )
             return
 
