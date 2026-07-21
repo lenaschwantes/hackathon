@@ -20,7 +20,17 @@ from dialogue.prompts import PROMPT_EXTRACAO
 logger = logging.getLogger(__name__)
 
 CAMPOS_ESSENCIAIS = ("cidade", "escolaridade", "interesse", "nivel")
-_CAMPOS_EXTRAIDOS = (*CAMPOS_ESSENCIAIS, "modalidade")
+_CAMPOS_EXTRAIDOS = (*CAMPOS_ESSENCIAIS, "modalidade", "alcance")
+
+# Ordem em que os campos sao perguntados na coleta. Igual a
+# CAMPOS_ESSENCIAIS, mas com "alcance" intercalado antes de "nivel" --
+# ele e extra e nao entra em `campos_essenciais_completos()`, mas
+# intercalado antes do ultimo campo essencial ele ganha uma pergunta
+# dedicada no fluxo normal (turno a turno), antes do perfil fechar.
+# Se os essenciais chegarem todos de uma vez (num so turno), o perfil
+# fecha sem alcance ter sido perguntado -- normal, ver
+# `dialogue/recommendation.py` pro default nesse caso.
+_ORDEM_COLETA = ("cidade", "escolaridade", "interesse", "alcance", "nivel")
 
 # Máximo de turnos recentes passados como contexto pra extração --
 # só o suficiente pra resolver uma referência à mensagem anterior, sem
@@ -41,12 +51,22 @@ class Perfil(BaseModel):
         description="Nivel de curso desejado: tecnico integrado, tecnico subsequente, superior ou FIC",
     )
     modalidade: Optional[str] = Field(default=None, description="Presencial ou EAD, se a pessoa mencionar")
+    alcance: Optional[str] = Field(
+        default=None,
+        description=(
+            "Alcance geografico que a pessoa aceita pra estudar: "
+            "'local' (so a propria cidade), 'regional' (topa se "
+            "deslocar pra cidade vizinha), 'ead' (prefere ou so "
+            "consegue a distancia) ou 'qualquer' (nao se importa com "
+            "o lugar)."
+        ),
+    )
 
     def campos_essenciais_completos(self) -> bool:
         return all(getattr(self, campo) for campo in CAMPOS_ESSENCIAIS)
 
     def campos_faltantes(self) -> list[str]:
-        return [c for c in CAMPOS_ESSENCIAIS if not getattr(self, c)]
+        return [c for c in _ORDEM_COLETA if not getattr(self, c)]
 
 
 def perfil_vazio() -> dict:
@@ -57,7 +77,7 @@ def perfil_vazio() -> dict:
 def determinar_fase(perfil: Perfil) -> str:
     """
     'completo' quando cidade + escolaridade + interesse + nivel estao
-    preenchidos. 'modalidade' e extra, nao bloqueia.
+    preenchidos. 'modalidade' e 'alcance' sao extra, nao bloqueiam.
     """
     return "completo" if perfil.campos_essenciais_completos() else "coletando"
 

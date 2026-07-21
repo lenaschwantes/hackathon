@@ -18,7 +18,7 @@ def test_campo_ausente_continua_coletando():
     perfil = Perfil(cidade="Florianopolis", escolaridade="ensino medio completo")
     assert not perfil.campos_essenciais_completos()
     assert determinar_fase(perfil) == "coletando"
-    assert perfil.campos_faltantes() == ["interesse", "nivel"]
+    assert perfil.campos_faltantes() == ["interesse", "alcance", "nivel"]
 
 
 def test_perfil_completo_muda_de_fase():
@@ -53,6 +53,70 @@ def test_extrai_nivel_de_curso(monkeypatch):
     assert resultado.nivel == "superior"
 
 
+def test_extrai_alcance_local_de_fala_natural(monkeypatch):
+    def fake_chamar_llm(texto, perfil_atual, historico=None):
+        return {
+            "cidade": None, "escolaridade": None, "interesse": None, "nivel": None,
+            "modalidade": None, "alcance": "local",
+        }
+
+    monkeypatch.setattr(profile, "_chamar_llm", fake_chamar_llm)
+    resultado = extrair_perfil("so aqui na minha cidade mesmo", perfil_vazio())
+
+    assert resultado.alcance == "local"
+
+
+def test_extrai_alcance_regional_de_fala_natural(monkeypatch):
+    def fake_chamar_llm(texto, perfil_atual, historico=None):
+        return {
+            "cidade": None, "escolaridade": None, "interesse": None, "nivel": None,
+            "modalidade": None, "alcance": "regional",
+        }
+
+    monkeypatch.setattr(profile, "_chamar_llm", fake_chamar_llm)
+    resultado = extrair_perfil("posso ir pra Florianopolis, topo ir pra perto", perfil_vazio())
+
+    assert resultado.alcance == "regional"
+
+
+def test_extrai_alcance_ead_de_fala_natural(monkeypatch):
+    def fake_chamar_llm(texto, perfil_atual, historico=None):
+        return {
+            "cidade": None, "escolaridade": None, "interesse": None, "nivel": None,
+            "modalidade": None, "alcance": "ead",
+        }
+
+    monkeypatch.setattr(profile, "_chamar_llm", fake_chamar_llm)
+    resultado = extrair_perfil("prefiro a distancia, nao posso me deslocar", perfil_vazio())
+
+    assert resultado.alcance == "ead"
+
+
+def test_extrai_alcance_qualquer_de_fala_natural(monkeypatch):
+    def fake_chamar_llm(texto, perfil_atual, historico=None):
+        return {
+            "cidade": None, "escolaridade": None, "interesse": None, "nivel": None,
+            "modalidade": None, "alcance": "qualquer",
+        }
+
+    monkeypatch.setattr(profile, "_chamar_llm", fake_chamar_llm)
+    resultado = extrair_perfil("tanto faz onde", perfil_vazio())
+
+    assert resultado.alcance == "qualquer"
+
+
+def test_alcance_nao_bloqueia_perfil_completo():
+    perfil = Perfil(
+        cidade="Joinville",
+        escolaridade="ensino medio completo",
+        interesse="informatica",
+        nivel="tecnico integrado",
+    )
+    assert perfil.campos_essenciais_completos()
+    assert determinar_fase(perfil) == "completo"
+    assert perfil.alcance is None
+
+
 def test_extracao_nao_apaga_campo_ja_preenchido(monkeypatch):
     def fake_chamar_llm(texto, perfil_atual, historico=None):
         return {"cidade": None, "escolaridade": None, "interesse": "tecnologia", "nivel": None, "modalidade": None}
@@ -70,6 +134,23 @@ def test_extracao_nao_apaga_campo_ja_preenchido(monkeypatch):
     assert resultado.cidade == "Joinville"
     assert resultado.escolaridade == "ensino medio completo"
     assert resultado.interesse == "tecnologia"
+
+
+def test_extracao_nao_apaga_alcance_ja_preenchido(monkeypatch):
+    def fake_chamar_llm(texto, perfil_atual, historico=None):
+        return {
+            "cidade": None, "escolaridade": None, "interesse": "tecnologia", "nivel": None,
+            "modalidade": None, "alcance": None,
+        }
+
+    monkeypatch.setattr(profile, "_chamar_llm", fake_chamar_llm)
+    perfil_atual = {
+        "cidade": "Joinville", "escolaridade": "ensino medio completo", "interesse": None,
+        "nivel": None, "modalidade": None, "alcance": "regional",
+    }
+    resultado = extrair_perfil("quero fazer algo com tecnologia", perfil_atual)
+
+    assert resultado.alcance == "regional"
 
 
 def test_extracao_com_falha_no_llm_preserva_perfil(monkeypatch):

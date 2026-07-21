@@ -124,6 +124,69 @@ class TestMontarContexto:
 
         assert capturado["nivel"] == "superior"
 
+    def test_repassa_alcance_do_perfil_pro_motor(self, monkeypatch):
+        capturado = {}
+
+        def fake_recomendar(cidade, hoje, nivel=None, modalidade=None, alcance=None, *, oportunidades=None):
+            capturado["alcance"] = alcance
+            return dict(_RESULTADO_VAZIO)
+
+        monkeypatch.setattr(recommendation, "recomendar", fake_recomendar)
+        perfil = Perfil(
+            cidade="Blumenau",
+            escolaridade="ensino medio completo",
+            interesse="tecnologia",
+            alcance="local",
+        )
+
+        montar_contexto(perfil, date(2026, 7, 10))
+
+        assert capturado["alcance"] == "local"
+
+    def test_sem_alcance_coletado_usa_default_inclusivo_do_motor(self, monkeypatch):
+        capturado = {}
+
+        def fake_recomendar(cidade, hoje, nivel=None, modalidade=None, alcance=None, *, oportunidades=None):
+            capturado["alcance"] = alcance
+            return dict(_RESULTADO_VAZIO)
+
+        monkeypatch.setattr(recommendation, "recomendar", fake_recomendar)
+        perfil = Perfil(cidade="Blumenau", escolaridade="ensino medio completo", interesse="tecnologia")
+
+        montar_contexto(perfil, date(2026, 7, 10))
+
+        assert capturado["alcance"] is None
+
+    def test_cidade_fora_de_sc_forca_alcance_ead(self, monkeypatch):
+        capturado = {}
+
+        def fake_recomendar(cidade, hoje, nivel=None, modalidade=None, alcance=None, *, oportunidades=None):
+            capturado["alcance"] = alcance
+            return dict(_RESULTADO_VAZIO)
+
+        monkeypatch.setattr(recommendation, "recomendar", fake_recomendar)
+        # Curitiba nao e municipio de Santa Catarina -- mesmo pedindo
+        # "qualquer", o alcance efetivo deve virar "ead".
+        perfil = Perfil(
+            cidade="Curitiba",
+            escolaridade="ensino medio completo",
+            interesse="tecnologia",
+            alcance="qualquer",
+        )
+
+        contexto = montar_contexto(perfil, date(2026, 7, 10))
+
+        assert capturado["alcance"] == "ead"
+        assert contexto["fora_de_sc"] is True
+
+    def test_cidade_de_sc_nao_marca_fora_de_sc(self, monkeypatch):
+        monkeypatch.setattr(recommendation, "recomendar", _fake_recomendar([]))
+        perfil = Perfil(cidade="Blumenau", escolaridade="ensino medio completo", interesse="tecnologia")
+
+        contexto = montar_contexto(perfil, date(2026, 7, 10))
+
+        assert contexto["fora_de_sc"] is False
+
 
 class TestGerarRecomendacao:
     def test_repassa_contexto_correto_pro_llm(self, monkeypatch):

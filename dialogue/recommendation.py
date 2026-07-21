@@ -16,11 +16,28 @@ import anthropic
 from pydantic import BaseModel
 
 from config.settings import settings
+from dialogue.geografia import cidade_em_sc
 from dialogue.profile import Perfil
 from dialogue.prompts import PROMPT_CLASSIFICA_PEDIDO_RECOMENDACAO, PROMPT_RECOMENDACAO
 from recommend.opportunities import recomendar
 
 logger = logging.getLogger(__name__)
+
+_ALCANCES_VALIDOS = frozenset({"local", "regional", "ead", "qualquer"})
+
+
+def _alcance_efetivo(perfil: Perfil, fora_de_sc: bool) -> str | None:
+    """
+    Cidade fora de SC nunca alcanca oportunidade presencial do IFSC --
+    o alcance efetivo vira "ead" independente do que a pessoa tenha
+    pedido. Caso contrario, so aceita o alcance coletado se for um dos
+    valores validos (defesa contra extracao malformada vinda do LLM);
+    sem alcance coletado (ou invalido), `None` deixa `recomendar()`
+    aplicar o proprio default inclusivo (na_cidade + regiao + ead).
+    """
+    if fora_de_sc:
+        return "ead"
+    return perfil.alcance if perfil.alcance in _ALCANCES_VALIDOS else None
 
 
 class _ClassificacaoPedido(BaseModel):
@@ -36,14 +53,24 @@ def montar_contexto(perfil: Perfil, hoje: date) -> dict:
     `regiao`, `ead`, `outras_cidades`) em vez de filtrar cidade como
     fronteira rigida -- repassamos as camadas como vieram, pra redacao
     poder ser transparente sobre o quanto de deslocamento cada opcao
-    implica. Sem `alcance` explicito, usa o default de `recomendar()`
+    implica. O alcance do perfil (`perfil.alcance`) e repassado pro
+    motor; sem alcance coletado, usa o default de `recomendar()`
     (inclusivo, mas nunca extrapola pra `outras_cidades` sozinho).
+    Cidade fora de Santa Catarina forca o alcance efetivo pra "ead" --
+    ver `_alcance_efetivo` -- porque nenhuma oportunidade presencial do
+    IFSC alcanca quem mora fora do estado.
     """
+    fora_de_sc = bool(perfil.cidade) and not cidade_em_sc(perfil.cidade)
     resultado = recomendar(
-        cidade=perfil.cidade, hoje=hoje, nivel=perfil.nivel, modalidade=perfil.modalidade
+        cidade=perfil.cidade,
+        hoje=hoje,
+        nivel=perfil.nivel,
+        modalidade=perfil.modalidade,
+        alcance=_alcance_efetivo(perfil, fora_de_sc),
     )
     return {
         "interesse": perfil.interesse,
+        "fora_de_sc": fora_de_sc,
         "na_cidade": [o.model_dump(mode="json") for o in resultado["na_cidade"]],
         "regiao": [o.model_dump(mode="json") for o in resultado["regiao"]],
         "ead": [o.model_dump(mode="json") for o in resultado["ead"]],
