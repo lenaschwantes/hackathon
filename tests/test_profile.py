@@ -5,13 +5,20 @@ nenhuma infraestrutura externa. A chamada ao LLM e isolada em
 """
 
 from dialogue import profile
-from dialogue.profile import Perfil, determinar_fase, extrair_perfil, perfil_vazio
+from dialogue.profile import OPCOES_NIVEL, Perfil, determinar_fase, extrair_perfil, perfil_vazio
 
 
 def test_perfil_vazio_esta_incompleto():
     perfil = Perfil(**perfil_vazio())
     assert not perfil.campos_essenciais_completos()
     assert determinar_fase(perfil) == "coletando"
+
+
+def test_opcoes_nivel_tem_quatro_entradas_com_valores_canonicos():
+    assert len(OPCOES_NIVEL) == 4
+    valores = [valor for _, valor in OPCOES_NIVEL]
+    assert valores == ["tecnico integrado", "tecnico subsequente", "superior", "FIC"]
+    assert all(rotulo for rotulo, _ in OPCOES_NIVEL)
 
 
 def test_campo_ausente_continua_coletando():

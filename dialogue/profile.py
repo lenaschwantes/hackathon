@@ -32,6 +32,19 @@ _CAMPOS_EXTRAIDOS = (*CAMPOS_ESSENCIAIS, "modalidade", "alcance")
 # `dialogue/recommendation.py` pro default nesse caso.
 _ORDEM_COLETA = ("cidade", "escolaridade", "interesse", "alcance", "nivel")
 
+# Opcoes fechadas do campo "nivel", na ordem em que devem ser
+# apresentadas (rotulo legivel, valor canonico). Os valores batem
+# exatamente com o que PROMPT_EXTRACAO ja garante extrair de fala
+# livre -- usado tanto pelo menu numerado em texto quanto pelos botoes
+# inline do Telegram (`channels/engine.py`), que pulam o extrator e
+# usam o valor direto quando a pessoa toca um botao.
+OPCOES_NIVEL: tuple[tuple[str, str], ...] = (
+    ("Técnico integrado", "tecnico integrado"),
+    ("Técnico subsequente", "tecnico subsequente"),
+    ("Graduação", "superior"),
+    ("FIC (curso rápido)", "FIC"),
+)
+
 # Máximo de turnos recentes passados como contexto pra extração --
 # só o suficiente pra resolver uma referência à mensagem anterior, sem
 # inflar o prompt.

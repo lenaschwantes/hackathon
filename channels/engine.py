@@ -13,15 +13,18 @@ import json
 import logging
 import os
 import re
+from dataclasses import dataclass
 
 import anthropic
 
 from config.settings import settings
 from dialogue.intent import precisa_busca
-from dialogue.profile import Perfil, determinar_fase, extrair_perfil
+from dialogue.profile import OPCOES_NIVEL, Perfil, determinar_fase, extrair_perfil
 from dialogue.prompts import PROMPT_COLETA, PROMPT_CONVERSA, PROMPT_CONFIRMACAO_REINICIO
 from dialogue.recommendation import gerar_recomendacao, quer_nova_recomendacao
 from dialogue.reset import (
+    CALLBACK_REINICIO_CANCELAR,
+    CALLBACK_REINICIO_CONFIRMAR,
     classificar_pedido_reinicio,
     eh_confirmacao_positiva,
     limpar_para_outra_area,
@@ -30,6 +33,50 @@ from dialogue.reset import (
 from retrieval.generate import answer
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class Botao:
+    """Um botão inline: rótulo visível e o `callback_data` que volta no toque."""
+
+    rotulo: str
+    callback_data: str
+
+
+class Resposta(str):
+    """
+    Texto de resposta que deve vir acompanhado de botões inline (hoje:
+    seleção de nível, confirmação de reinício). Subclasse de `str` de
+    propósito -- todo código que já trata o retorno de `responder()`
+    como string simples (comparação de igualdade, f-string, `reply_text`,
+    `json.dumps` no histórico) continua funcionando sem nenhuma mudança;
+    só quem precisa dos botões (`channels/telegram.py`) lê `.botoes`.
+
+    `botoes` é uma lista de linhas (cada linha uma lista de `Botao`),
+    espelhando o layout de teclado do Telegram sem importar nada de
+    Telegram aqui.
+    """
+
+    botoes: list[list[Botao]] | None
+
+    def __new__(cls, texto: str, botoes: list[list[Botao]] | None = None) -> "Resposta":
+        obj = super().__new__(cls, texto)
+        obj.botoes = botoes
+        return obj
+
+
+_BOTOES_NIVEL: list[list[Botao]] = [
+    [Botao(rotulo, f"nivel:{i}") for i, (rotulo, _) in enumerate(OPCOES_NIVEL)][0:2],
+    [Botao(rotulo, f"nivel:{i}") for i, (rotulo, _) in enumerate(OPCOES_NIVEL)][2:4],
+]
+
+# Opção segura (nao-destrutiva) primeiro, e rotulos que restatam a
+# consequencia real -- nunca "Sim"/"Nao" vago -- seguindo a diretriz de
+# UX pra acoes destrutivas: friccao e clareza proporcionais ao risco.
+_BOTOES_REINICIO: list[list[Botao]] = [
+    [Botao("Manter meus dados", CALLBACK_REINICIO_CANCELAR)],
+    [Botao("Apagar tudo e recomeçar", CALLBACK_REINICIO_CONFIRMAR)],
+]
 
 _MENSAGEM_FALLBACK = (
     "Desculpa, tive um problema pra buscar essa informação agora. "
@@ -147,9 +194,37 @@ def _gerar_confirmacao_reinicio(texto: str) -> str:
     return next(b.text for b in resposta.content if b.type == "text")
 
 
-def responder(user_id: str, texto: str, sessao: dict) -> str:
+def _com_botoes_de_nivel(pergunta: str, perfil: Perfil) -> str | Resposta:
+    """
+    Envolve a pergunta de coleta com os botões de nível quando "nivel"
+    é o próximo campo faltante -- único ponto em que decide se anexa
+    esses botões, usado nos dois lugares que chamam
+    `_gerar_pergunta_coleta` (coleta normal e pós-"buscar outra área").
+    """
+    faltantes = perfil.campos_faltantes()
+    if faltantes and faltantes[0] == "nivel":
+        return Resposta(pergunta, botoes=_BOTOES_NIVEL)
+    return pergunta
+
+
+def responder(
+    user_id: str,
+    texto: str,
+    sessao: dict,
+    nivel_escolhido: str | None = None,
+) -> str:
     """
     Recebe o id do usuário, o texto que ele mandou, e a sessão atual.
+
+    `nivel_escolhido` é preenchido só quando a origem da chamada foi um
+    toque num botão inline de nível (`channels/telegram.py`): pula a
+    chamada ao extrator (LLM) e define `Perfil.nivel` direto com o
+    valor do botão -- mais barato e determinístico que tratar o rótulo
+    do botão como se a pessoa tivesse digitado. Por construção, um
+    botão de nível só existe durante a fase "coletando", nunca pode ser
+    um pedido de reinício, então também pula os blocos de reinício
+    abaixo (`classificar_pedido_reinicio` custaria uma chamada paga à
+    toa nesse caso).
 
     Antes de qualquer outra coisa, verifica se há um pedido de
     reinício em andamento (`fase_dialogo == "confirmando_reinicio"`)
@@ -181,59 +256,72 @@ def responder(user_id: str, texto: str, sessao: dict) -> str:
     """
     texto = texto[:_MAX_CARACTERES_MENSAGEM]
 
-    # Reinício: verificado antes de qualquer outra coisa, pois pode
-    # ser pedido em qualquer ponto da conversa.
-    if sessao.get("fase_dialogo") == "confirmando_reinicio":
-        if eh_confirmacao_positiva(texto):
-            sessao["perfil"] = perfil_zerado()
-            sessao["fase_dialogo"] = "coletando"
-            sessao["historico"] = []
-            sessao.pop("fase_dialogo_anterior", None)
-            return "Prontinho, apaguei tudo! Vamos começar de novo: em qual cidade você mora?"
-        else:
-            # Restaura a fase em que a pessoa estava antes de pedir o
-            # reinício (pode ter sido "coletando" ou "completo"). O
-            # fallback "completo" só entra em cena defensivamente, se
-            # por algum motivo a sessão chegar aqui sem o campo salvo
-            # (ex.: sessão antiga no Redis, de antes desse campo
-            # existir).
-            sessao["fase_dialogo"] = sessao.pop("fase_dialogo_anterior", "completo")
-            return "Sem problema, mantive seus dados como estavam."
+    if nivel_escolhido is None:
+        # Reinício: verificado antes de qualquer outra coisa, pois pode
+        # ser pedido em qualquer ponto da conversa.
+        if sessao.get("fase_dialogo") == "confirmando_reinicio":
+            if eh_confirmacao_positiva(texto):
+                sessao["perfil"] = perfil_zerado()
+                sessao["fase_dialogo"] = "coletando"
+                sessao["historico"] = []
+                sessao.pop("fase_dialogo_anterior", None)
+                return "Prontinho, apaguei tudo! Vamos começar de novo: em qual cidade você mora?"
+            else:
+                # Restaura a fase em que a pessoa estava antes de pedir o
+                # reinício (pode ter sido "coletando" ou "completo"). O
+                # fallback "completo" só entra em cena defensivamente, se
+                # por algum motivo a sessão chegar aqui sem o campo salvo
+                # (ex.: sessão antiga no Redis, de antes desse campo
+                # existir).
+                sessao["fase_dialogo"] = sessao.pop("fase_dialogo_anterior", "completo")
+                return "Sem problema, mantive seus dados como estavam."
 
-    if sessao.get("perfil"):
-        pedido = classificar_pedido_reinicio(texto)
-        if pedido == "buscar_outra_area":
-            sessao["perfil"] = limpar_para_outra_area(sessao["perfil"])
-            sessao["fase_dialogo"] = determinar_fase(Perfil(**sessao["perfil"]))
-            try:
-                return _gerar_pergunta_coleta(Perfil(**sessao["perfil"]))
-            except Exception as exc:
-                _logar_falha("gerar pergunta apos buscar outra area", user_id, exc)
-                return _MENSAGEM_FALLBACK
-        elif pedido == "comecar_de_novo":
-            sessao["fase_dialogo_anterior"] = sessao.get("fase_dialogo")
-            sessao["fase_dialogo"] = "confirmando_reinicio"
-            try:
-                return _gerar_confirmacao_reinicio(texto)
-            except Exception as exc:
-                _logar_falha("gerar confirmacao de reinicio", user_id, exc)
-                return _MENSAGEM_FALLBACK_CONFIRMACAO_REINICIO
+        # `any(...)` em vez de só checar a chave: um perfil recem-criado
+        # (`perfil_vazio()`) já é um dict não-vazio, só que com todos os
+        # campos None -- sem essa checagem, classificar_pedido_reinicio()
+        # rodaria (Anthropic pago) em toda mensagem desde o segundo turno,
+        # mesmo antes de existir qualquer dado real pra reiniciar.
+        if any((sessao.get("perfil") or {}).values()):
+            pedido = classificar_pedido_reinicio(texto)
+            if pedido == "buscar_outra_area":
+                sessao["perfil"] = limpar_para_outra_area(sessao["perfil"])
+                perfil_pos_reset = Perfil(**sessao["perfil"])
+                sessao["fase_dialogo"] = determinar_fase(perfil_pos_reset)
+                try:
+                    pergunta = _gerar_pergunta_coleta(perfil_pos_reset)
+                except Exception as exc:
+                    _logar_falha("gerar pergunta apos buscar outra area", user_id, exc)
+                    return _MENSAGEM_FALLBACK
+                return _com_botoes_de_nivel(pergunta, perfil_pos_reset)
+            elif pedido == "comecar_de_novo":
+                sessao["fase_dialogo_anterior"] = sessao.get("fase_dialogo")
+                sessao["fase_dialogo"] = "confirmando_reinicio"
+                try:
+                    pergunta = _gerar_confirmacao_reinicio(texto)
+                except Exception as exc:
+                    _logar_falha("gerar confirmacao de reinicio", user_id, exc)
+                    return Resposta(_MENSAGEM_FALLBACK_CONFIRMACAO_REINICIO, botoes=_BOTOES_REINICIO)
+                return Resposta(pergunta, botoes=_BOTOES_REINICIO)
 
     perfil_atual = sessao.get("perfil") or {}
     perfil = Perfil(**perfil_atual)
 
     if determinar_fase(perfil) != "completo":
         historico = sessao.get("historico") or []
-        perfil = extrair_perfil(texto, perfil_atual, historico=historico)
+        if nivel_escolhido:
+            perfil = Perfil(**{**perfil_atual, "nivel": nivel_escolhido})
+        else:
+            perfil = extrair_perfil(texto, perfil_atual, historico=historico)
         sessao["perfil"] = perfil.model_dump()
         sessao["fase_dialogo"] = determinar_fase(perfil)
 
         if sessao["fase_dialogo"] != "completo":
             try:
-                return _gerar_pergunta_coleta(perfil)
+                pergunta = _gerar_pergunta_coleta(perfil)
             except Exception as exc:
                 _logar_falha("gerar pergunta de coleta", user_id, exc)
                 return _MENSAGEM_FALLBACK
+            return _com_botoes_de_nivel(pergunta, perfil)
 
         try:
             return gerar_recomendacao(perfil)

@@ -5,16 +5,41 @@ projeto deve fazer isso.
 """
 
 import asyncio
+import logging
 import os
 
-from telegram import Update
-from telegram.ext import Application, ContextTypes, MessageHandler, filters
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import (
+    Application,
+    CallbackQueryHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
 
 from channels.base import ChannelAdapter
-from channels.engine import _MAX_CARACTERES_MENSAGEM
+from channels.engine import _MAX_CARACTERES_MENSAGEM, Botao
 from channels.engine import responder as fake_responder
 from channels.rate_limit import MENSAGEM_LIMITE_EXCEDIDO, eh_duplicada, permitido
 from channels.session import carregar_sessao, salvar_sessao
+from dialogue.profile import OPCOES_NIVEL
+from dialogue.reset import (
+    CALLBACK_REINICIO_CANCELAR,
+    CALLBACK_REINICIO_CONFIRMAR,
+    TEXTO_SINTETICO_CANCELAR,
+    TEXTO_SINTETICO_CONFIRMAR,
+)
+
+logger = logging.getLogger(__name__)
+
+
+def _montar_teclado(botoes: list[list[Botao]] | None) -> InlineKeyboardMarkup | None:
+    """Converte a lista de `Botao` (agnóstica de Telegram) num `InlineKeyboardMarkup`."""
+    if not botoes:
+        return None
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton(botao.rotulo, callback_data=botao.callback_data) for botao in linha] for linha in botoes]
+    )
 
 
 class TelegramAdapter(ChannelAdapter):
@@ -31,6 +56,7 @@ class TelegramAdapter(ChannelAdapter):
         self._app.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self._ao_receber)
         )
+        self._app.add_handler(CallbackQueryHandler(self._ao_receber_botao))
 
     async def _ao_receber(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
@@ -56,10 +82,69 @@ class TelegramAdapter(ChannelAdapter):
         resposta = self._responder(user_id, texto, sessao)
 
         sessao["historico"].append({"de": "usuario", "texto": texto})
-        sessao["historico"].append({"de": "bot", "texto": resposta})
+        sessao["historico"].append({"de": "bot", "texto": str(resposta)})
         await salvar_sessao(user_id, sessao)
 
-        await update.message.reply_text(resposta)
+        botoes = getattr(resposta, "botoes", None)
+        await update.message.reply_text(str(resposta), reply_markup=_montar_teclado(botoes))
+
+    async def _ao_receber_botao(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        Chamado a cada toque num botão inline (seleção de nível ou
+        confirmação de reinício). Reaproveita o mesmo `self._responder`
+        e a mesma sessão do canal de texto -- um toque de botão produz
+        exatamente o mesmo estado de sessão que digitar a resposta
+        equivalente produziria (ver `channels/engine.py::responder`).
+        """
+        query = update.callback_query
+        await query.answer()  # limpa o spinner de carregamento do cliente Telegram
+
+        user_id = str(query.from_user.id)
+        data = query.data
+
+        if not await permitido(user_id):
+            await context.bot.send_message(chat_id=query.message.chat_id, text=MENSAGEM_LIMITE_EXCEDIDO)
+            return
+
+        sessao = await carregar_sessao(user_id)
+
+        if data is not None and data.startswith("nivel:"):
+            indice = int(data.split(":", 1)[1])
+            rotulo, valor = OPCOES_NIVEL[indice]
+            if sessao.get("fase_dialogo") == "coletando":
+                texto_usuario = rotulo
+                resposta = self._responder(user_id, rotulo, sessao, valor)
+            else:
+                # Botão obsoleto: a sessão mudou de fase desde que ele
+                # apareceu (ex.: a pessoa reiniciou nesse meio tempo).
+                # Não força mais um nível numa fase a que ele não
+                # pertence -- cai no fluxo normal com o texto do botão.
+                texto_usuario = rotulo
+                resposta = self._responder(user_id, rotulo, sessao)
+        elif data in (CALLBACK_REINICIO_CONFIRMAR, CALLBACK_REINICIO_CANCELAR):
+            texto_usuario = (
+                TEXTO_SINTETICO_CONFIRMAR if data == CALLBACK_REINICIO_CONFIRMAR else TEXTO_SINTETICO_CANCELAR
+            )
+            resposta = self._responder(user_id, texto_usuario, sessao)
+        else:
+            logger.warning("callback_data desconhecido recebido: %r", data)
+            return
+
+        sessao["historico"].append({"de": "usuario", "texto": texto_usuario})
+        sessao["historico"].append({"de": "bot", "texto": str(resposta)})
+        await salvar_sessao(user_id, sessao)
+
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            # Mensagem original já editada/apagada -- não deve derrubar
+            # a resposta por causa disso, só deixa de remover o teclado.
+            pass
+
+        botoes = getattr(resposta, "botoes", None)
+        await context.bot.send_message(
+            chat_id=query.message.chat_id, text=str(resposta), reply_markup=_montar_teclado(botoes)
+        )
 
     async def enviar(self, user_id: str, texto: str) -> None:
         await self._app.bot.send_message(chat_id=int(user_id), text=texto)

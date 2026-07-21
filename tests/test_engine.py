@@ -211,6 +211,228 @@ class TestHistoricoNaExtracao:
         assert capturado["historico"] == sessao["historico"]
 
 
+class TestReinicio:
+    """
+    Cobertura da integracao de reinicio em `responder()` -- a logica
+    pura (`limpar_para_outra_area`, `perfil_zerado`,
+    `classificar_pedido_reinicio`, `eh_confirmacao_positiva`) ja e
+    testada isoladamente em `tests/test_reset.py`; aqui o foco e a
+    orquestracao de fase (`fase_dialogo`/`fase_dialogo_anterior`) que
+    só existe em `channels/engine.py`.
+    """
+
+    def test_perfil_sem_nenhum_campo_preenchido_nao_chama_classificador_de_reinicio(self, monkeypatch):
+        # Perfil recem-criado (perfil_vazio()) e um dict nao-vazio, mas
+        # com tudo None -- nao ha nada pra reiniciar ainda, entao o
+        # classificador (Anthropic pago) nem deveria ser chamado.
+        def _classificador_nao_deveria_ser_chamado(texto):
+            raise AssertionError("classificar_pedido_reinicio não deveria ser chamado com perfil vazio")
+
+        monkeypatch.setattr(engine, "classificar_pedido_reinicio", _classificador_nao_deveria_ser_chamado)
+        monkeypatch.setattr(engine, "extrair_perfil", lambda texto, perfil_atual, historico=None: Perfil(**perfil_atual))
+        monkeypatch.setattr(engine, "_gerar_pergunta_coleta", lambda perfil: "Pergunta de coleta.")
+
+        perfil_vazio = {c: None for c in ("cidade", "escolaridade", "interesse", "nivel", "modalidade", "alcance")}
+        sessao = _sessao(perfil_vazio)
+        responder("user-1", "oi", sessao)  # não deve levantar AssertionError
+
+    def test_perfil_com_algum_campo_preenchido_chama_classificador_de_reinicio(self, monkeypatch):
+        capturado = {}
+
+        def fake_classificar(texto):
+            capturado["chamado"] = True
+            return "nenhum"
+
+        monkeypatch.setattr(engine, "classificar_pedido_reinicio", fake_classificar)
+        monkeypatch.setattr(engine, "extrair_perfil", lambda texto, perfil_atual, historico=None: Perfil(**perfil_atual))
+        monkeypatch.setattr(engine, "_gerar_pergunta_coleta", lambda perfil: "Pergunta de coleta.")
+
+        sessao = _sessao(dict(_PERFIL_INCOMPLETO))
+        responder("user-1", "moro em Blumenau", sessao)
+
+        assert capturado.get("chamado") is True
+
+    def test_buscar_outra_area_preserva_cidade_e_pede_o_que_falta(self, monkeypatch):
+        monkeypatch.setattr(engine, "classificar_pedido_reinicio", lambda texto: "buscar_outra_area")
+
+        capturado = {}
+
+        def fake_gerar_pergunta(perfil):
+            capturado["perfil"] = perfil
+            return "Legal, e que área te interessa agora?"
+
+        monkeypatch.setattr(engine, "_gerar_pergunta_coleta", fake_gerar_pergunta)
+
+        sessao = _sessao(dict(_PERFIL_COMPLETO), fase="completo")
+        resposta = responder("user-1", "quero ver outra área", sessao)
+
+        assert resposta == "Legal, e que área te interessa agora?"
+        assert sessao["perfil"]["cidade"] == "Blumenau"
+        assert sessao["perfil"]["interesse"] is None
+        assert sessao["perfil"]["nivel"] is None
+        assert sessao["fase_dialogo"] == "coletando"
+        assert capturado["perfil"].cidade == "Blumenau"
+        assert capturado["perfil"].interesse is None
+
+    def test_falha_ao_gerar_pergunta_apos_buscar_outra_area_cai_no_fallback(self, monkeypatch):
+        monkeypatch.setattr(engine, "classificar_pedido_reinicio", lambda texto: "buscar_outra_area")
+
+        def _gerar_pergunta_com_erro(perfil):
+            raise RuntimeError("Anthropic indisponível")
+
+        monkeypatch.setattr(engine, "_gerar_pergunta_coleta", _gerar_pergunta_com_erro)
+
+        sessao = _sessao(dict(_PERFIL_COMPLETO), fase="completo")
+        resposta = responder("user-1", "quero ver outra área", sessao)
+
+        assert resposta == engine._MENSAGEM_FALLBACK
+
+    def test_comecar_de_novo_entra_em_confirmacao_e_guarda_fase_anterior(self, monkeypatch):
+        monkeypatch.setattr(engine, "classificar_pedido_reinicio", lambda texto: "comecar_de_novo")
+        monkeypatch.setattr(engine, "_gerar_confirmacao_reinicio", lambda texto: "Quer mesmo apagar tudo?")
+
+        sessao = _sessao(dict(_PERFIL_COMPLETO), fase="completo")
+        resposta = responder("user-1", "quero começar de novo", sessao)
+
+        assert resposta == "Quer mesmo apagar tudo?"
+        assert sessao["fase_dialogo"] == "confirmando_reinicio"
+        assert sessao["fase_dialogo_anterior"] == "completo"
+        # Perfil não é tocado até a confirmação de fato chegar.
+        assert sessao["perfil"] == _PERFIL_COMPLETO
+
+    def test_falha_ao_gerar_confirmacao_de_reinicio_cai_no_fallback_proprio(self, monkeypatch):
+        monkeypatch.setattr(engine, "classificar_pedido_reinicio", lambda texto: "comecar_de_novo")
+
+        def _gerar_confirmacao_com_erro(texto):
+            raise RuntimeError("Anthropic indisponível")
+
+        monkeypatch.setattr(engine, "_gerar_confirmacao_reinicio", _gerar_confirmacao_com_erro)
+
+        sessao = _sessao(dict(_PERFIL_COMPLETO), fase="completo")
+        resposta = responder("user-1", "quero começar de novo", sessao)
+
+        assert resposta == engine._MENSAGEM_FALLBACK_CONFIRMACAO_REINICIO
+        # Mesmo com falha na geração da pergunta, a sessão já entrou
+        # em modo de confirmação -- senão a pessoa ficaria presa sem
+        # nunca conseguir confirmar de fato.
+        assert sessao["fase_dialogo"] == "confirmando_reinicio"
+
+    def test_confirmacao_positiva_apaga_perfil_e_historico(self, monkeypatch):
+        sessao = _sessao(dict(_PERFIL_COMPLETO), fase="confirmando_reinicio")
+        sessao["fase_dialogo_anterior"] = "completo"
+        sessao["historico"] = [{"de": "usuario", "texto": "oi"}, {"de": "bot", "texto": "olá!"}]
+
+        resposta = responder("user-1", "sim", sessao)
+
+        assert resposta == "Prontinho, apaguei tudo! Vamos começar de novo: em qual cidade você mora?"
+        assert all(v is None for v in sessao["perfil"].values())
+        assert sessao["fase_dialogo"] == "coletando"
+        assert sessao["historico"] == []
+        assert "fase_dialogo_anterior" not in sessao
+
+    def test_confirmacao_negativa_restaura_fase_anterior_guardada(self, monkeypatch):
+        sessao = _sessao(dict(_PERFIL_COMPLETO), fase="confirmando_reinicio")
+        sessao["fase_dialogo_anterior"] = "coletando"
+
+        resposta = responder("user-1", "não, deixa como está", sessao)
+
+        assert resposta == "Sem problema, mantive seus dados como estavam."
+        assert sessao["fase_dialogo"] == "coletando"
+        assert sessao["perfil"] == _PERFIL_COMPLETO
+        assert "fase_dialogo_anterior" not in sessao
+
+    def test_confirmacao_negativa_sem_fase_anterior_guardada_cai_em_completo(self, monkeypatch):
+        # Sessão antiga no Redis, de antes do campo fase_dialogo_anterior
+        # existir -- fallback defensivo pra "completo".
+        sessao = _sessao(dict(_PERFIL_COMPLETO), fase="confirmando_reinicio")
+
+        resposta = responder("user-1", "não", sessao)
+
+        assert resposta == "Sem problema, mantive seus dados como estavam."
+        assert sessao["fase_dialogo"] == "completo"
+
+
+_PERFIL_SO_FALTA_NIVEL = {
+    "cidade": "Blumenau",
+    "escolaridade": "ensino medio completo",
+    "interesse": "tecnologia",
+    "nivel": None,
+    "modalidade": None,
+    "alcance": "regional",
+}
+
+
+class TestBotoesDeNivel:
+    def test_pergunta_de_nivel_vem_com_botoes_quando_e_o_proximo_campo(self, monkeypatch):
+        monkeypatch.setattr(engine, "_gerar_pergunta_coleta", lambda perfil: "Qual nível você quer?")
+
+        sessao = _sessao(dict(_PERFIL_SO_FALTA_NIVEL))
+        resposta = responder("user-1", "quero tecnologia", sessao)
+
+        assert resposta == "Qual nível você quer?"
+        assert resposta.botoes == engine._BOTOES_NIVEL
+
+    def test_pergunta_de_outro_campo_nao_vem_com_botoes(self, monkeypatch):
+        monkeypatch.setattr(engine, "_gerar_pergunta_coleta", lambda perfil: "Qual sua escolaridade?")
+
+        perfil_faltando_escolaridade = {**_PERFIL_SO_FALTA_NIVEL, "escolaridade": None, "alcance": None}
+        sessao = _sessao(perfil_faltando_escolaridade)
+        resposta = responder("user-1", "moro em Blumenau", sessao)
+
+        assert resposta == "Qual sua escolaridade?"
+        assert getattr(resposta, "botoes", None) is None
+
+    def test_nivel_escolhido_ignora_extrator_e_define_nivel_direto(self, monkeypatch):
+        def _extrair_perfil_nao_deveria_ser_chamado(texto, perfil_atual, historico=None):
+            raise AssertionError("extrair_perfil() não deveria ser chamado com nivel_escolhido")
+
+        monkeypatch.setattr(engine, "extrair_perfil", _extrair_perfil_nao_deveria_ser_chamado)
+        monkeypatch.setattr(engine, "gerar_recomendacao", lambda perfil: "Achei um curso pra você!")
+
+        sessao = _sessao(dict(_PERFIL_SO_FALTA_NIVEL))
+        resposta = responder("user-1", "2", sessao, nivel_escolhido="tecnico subsequente")
+
+        assert resposta == "Achei um curso pra você!"
+        assert sessao["perfil"]["nivel"] == "tecnico subsequente"
+        assert sessao["fase_dialogo"] == "completo"
+
+    def test_nivel_escolhido_pula_classificador_de_reinicio(self, monkeypatch):
+        def _classificador_nao_deveria_ser_chamado(texto):
+            raise AssertionError("classificar_pedido_reinicio não deveria ser chamado com nivel_escolhido")
+
+        monkeypatch.setattr(engine, "classificar_pedido_reinicio", _classificador_nao_deveria_ser_chamado)
+        monkeypatch.setattr(engine, "gerar_recomendacao", lambda perfil: "Achei um curso pra você!")
+
+        sessao = _sessao(dict(_PERFIL_SO_FALTA_NIVEL))
+        responder("user-1", "2", sessao, nivel_escolhido="superior")  # não deve levantar AssertionError
+
+
+class TestBotoesDeReinicio:
+    def test_confirmacao_de_reinicio_vem_com_botoes(self, monkeypatch):
+        monkeypatch.setattr(engine, "classificar_pedido_reinicio", lambda texto: "comecar_de_novo")
+        monkeypatch.setattr(engine, "_gerar_confirmacao_reinicio", lambda texto: "Quer mesmo apagar tudo?")
+
+        sessao = _sessao(dict(_PERFIL_COMPLETO), fase="completo")
+        resposta = responder("user-1", "quero começar de novo", sessao)
+
+        assert resposta == "Quer mesmo apagar tudo?"
+        assert resposta.botoes == engine._BOTOES_REINICIO
+
+    def test_fallback_de_confirmacao_de_reinicio_tambem_vem_com_botoes(self, monkeypatch):
+        monkeypatch.setattr(engine, "classificar_pedido_reinicio", lambda texto: "comecar_de_novo")
+
+        def _gerar_confirmacao_com_erro(texto):
+            raise RuntimeError("Anthropic indisponível")
+
+        monkeypatch.setattr(engine, "_gerar_confirmacao_reinicio", _gerar_confirmacao_com_erro)
+
+        sessao = _sessao(dict(_PERFIL_COMPLETO), fase="completo")
+        resposta = responder("user-1", "quero começar de novo", sessao)
+
+        assert resposta == engine._MENSAGEM_FALLBACK_CONFIRMACAO_REINICIO
+        assert resposta.botoes == engine._BOTOES_REINICIO
+
+
 class TestTetoDeMensagem:
     def test_mensagem_gigante_e_truncada_antes_de_qualquer_coisa(self, monkeypatch):
         capturado = {}

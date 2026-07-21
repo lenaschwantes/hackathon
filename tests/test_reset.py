@@ -4,6 +4,8 @@ Testes puros do modulo de reinicio -- nao tocam Anthropic de verdade.
 
 from dialogue import reset
 from dialogue.reset import (
+    TEXTO_SINTETICO_CANCELAR,
+    TEXTO_SINTETICO_CONFIRMAR,
     classificar_pedido_reinicio,
     eh_confirmacao_positiva,
     limpar_para_outra_area,
@@ -69,3 +71,35 @@ def test_confirmacao_positiva_reconhece_variacoes():
     assert eh_confirmacao_positiva(" confirmo ") is True
     assert eh_confirmacao_positiva("nao") is False
     assert eh_confirmacao_positiva("quero pensar") is False
+
+
+def test_confirmacao_positiva_tolera_pontuacao_final():
+    assert eh_confirmacao_positiva("Sim!") is True
+    assert eh_confirmacao_positiva("pode?") is True
+    assert eh_confirmacao_positiva("confirmado.") is True
+    assert eh_confirmacao_positiva("sim...") is True
+
+
+def test_confirmacao_positiva_reconhece_frases_naturais():
+    assert eh_confirmacao_positiva("sim, pode") is True
+    assert eh_confirmacao_positiva("pode sim") is True
+    assert eh_confirmacao_positiva("isso mesmo") is True
+    assert eh_confirmacao_positiva("com certeza") is True
+
+
+def test_confirmacao_positiva_nao_casa_palavra_isolada_em_frase_maior():
+    # "quero" sozinho confirma, mas embutido numa frase com outra
+    # intencao (recusa/duvida) nao pode contar como confirmacao --
+    # word-level match seria ambiguo demais aqui.
+    assert eh_confirmacao_positiva("quero pensar mais um pouco") is False
+    assert eh_confirmacao_positiva("acho que sim, mas nao tenho certeza") is False
+
+
+def test_texto_sintetico_confirmar_e_reconhecido_como_positivo():
+    # Pin: se _CONFIRMACOES_POSITIVAS mudar e parar de aceitar isso, o
+    # botao de reinicio quebra silenciosamente em producao.
+    assert eh_confirmacao_positiva(TEXTO_SINTETICO_CONFIRMAR) is True
+
+
+def test_texto_sintetico_cancelar_e_reconhecido_como_negativo():
+    assert eh_confirmacao_positiva(TEXTO_SINTETICO_CANCELAR) is False

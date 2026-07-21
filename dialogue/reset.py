@@ -7,11 +7,17 @@ Logica de reinicio do perfil, com duas granularidades:
   Exige confirmacao antes de aplicar (ver `fase_dialogo ==
   "confirmando_reinicio"` no engine.py).
 
-Ambas sao roteadas tanto por botao quanto por texto livre, via
-`classificar_pedido_reinicio`.
+Ambas sao roteadas por texto livre, via `classificar_pedido_reinicio`.
+A confirmacao de "comecar_de_novo" tambem pode vir de um botao inline
+do Telegram (ver `channels/telegram.py` e `channels/engine.py`) -- o
+botao usa os textos sinteticos `TEXTO_SINTETICO_CONFIRMAR`/
+`TEXTO_SINTETICO_CANCELAR` definidos abaixo, que passam pela mesma
+`eh_confirmacao_positiva()` de sempre, sem nenhuma logica de decisao
+separada pro caminho de botao.
 """
 
 import logging
+import re
 
 import anthropic
 
@@ -83,11 +89,46 @@ def classificar_pedido_reinicio(texto: str) -> str:
     return resultado
 
 
+_CONFIRMACOES_POSITIVAS = frozenset(
+    {
+        "sim", "s", "confirmo", "confirmado", "isso", "isso mesmo", "pode",
+        "pode sim", "sim pode", "sim, pode", "quero", "certeza", "com certeza",
+        "positivo", "manda ver", "yes",
+    }
+)
+
+# So remove pontuacao final repetida (ex.: "sim!", "sim...", "pode?") --
+# a frase inteira ainda precisa bater com uma das confirmacoes exatas
+# acima. Match parcial por palavra ficaria ambiguo demais pra decisao
+# tao sensivel quanto essa: "quero" sozinho confirma, mas "quero pensar"
+# claramente nao, e as duas compartilham a palavra "quero".
+_PONTUACAO_FINAL = re.compile(r"[!.,;?]+$")
+
+
 def eh_confirmacao_positiva(texto: str) -> bool:
     """
     Reconhece uma confirmacao simples de "sim" pro reinicio total.
     Deliberadamente simples (sem LLM) -- e uma decisao binaria de
-    baixo risco, nao precisa de classificador caro.
+    baixo risco, nao precisa de classificador caro. Tolera pontuacao
+    final e algumas variacoes comuns de frase inteira (ex.: "Sim!",
+    "isso mesmo", "sim, pode"), mas nunca casa uma palavra afirmativa
+    isolada dentro de uma frase maior -- qualquer coisa fora da lista
+    exata (inclusive "quero pensar") e tratada como recusa.
     """
-    afirmativos = {"sim", "s", "confirmo", "isso", "pode", "quero", "yes"}
-    return texto.strip().lower() in afirmativos
+    texto_normalizado = _PONTUACAO_FINAL.sub("", texto.strip().lower()).strip()
+    return texto_normalizado in _CONFIRMACOES_POSITIVAS
+
+
+# Contrato explicito pro botao inline de confirmacao de reinicio
+# (`channels/telegram.py`/`channels/engine.py`): callback_data que o
+# Telegram devolve, e o "texto sintetico" que cada um mapeia -- em vez
+# do canal de Telegram ter que adivinhar uma string magica que bate
+# com `_CONFIRMACOES_POSITIVAS`, o proprio modulo de reinicio exporta
+# os valores garantidos. O teste de pares logo abaixo (ver
+# tests/test_reset.py) fixa essa ponte: se `_CONFIRMACOES_POSITIVAS`
+# mudar sem essa constante ser atualizada junto, o teste quebra em vez
+# do botao falhar silenciosamente em producao.
+CALLBACK_REINICIO_CONFIRMAR = "reinicio:confirmar"
+CALLBACK_REINICIO_CANCELAR = "reinicio:cancelar"
+TEXTO_SINTETICO_CONFIRMAR = "confirmo"
+TEXTO_SINTETICO_CANCELAR = "manter meus dados"
