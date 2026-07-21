@@ -49,6 +49,29 @@ _PALAVRAS_CHAVE_BUSCA: tuple[str, ...] = (
     "selecao",
 )
 
+_CUMPRIMENTOS_INFORMAL: tuple[str, ...] = (
+    "oi",
+    "ola",
+    "olá",
+    "bom dia",
+    "boa tarde",
+    "boa noite",
+    "e ai",
+    "eae",
+    "opa",
+    "ei",
+    "tudo bem",
+)
+
+_AGRADECIAMENTOS_INFORMAL: tuple[str, ...] = (
+    "obrigado",
+    "obrigada",
+    "valeu",
+    "brigado",
+    "muito obrigado",
+    "muito obrigada",
+)
+
 _REGEX_BUSCA = re.compile(
     r"\b(" + "|".join(re.escape(p) for p in _PALAVRAS_CHAVE_BUSCA) + r")\b"
 )
@@ -80,6 +103,39 @@ def _bate_keyword(texto: str) -> bool:
         fronteira de palavra).
     """
     return bool(_REGEX_BUSCA.search(_normaliza(texto)))
+
+
+def _eh_papo_informal(texto: str) -> bool:
+    """Detecta saudações, agradecimentos e outras mensagens triviais.
+
+    Essas mensagens não devem cair no pipeline de RAG nem citar fontes.
+    """
+    texto_norm = _normaliza(texto)
+    if not texto_norm:
+        return True
+    if not re.search(r"[a-z0-9]", texto_norm):
+        return True
+    if texto_norm in _CUMPRIMENTOS_INFORMAL or texto_norm in _AGRADECIAMENTOS_INFORMAL:
+        return True
+
+    tokens = re.findall(r"[a-z0-9]+", texto_norm)
+    allowed_tokens = {
+        *[t for t in _CUMPRIMENTOS_INFORMAL if " " not in t],
+        *[t for t in _AGRADECIAMENTOS_INFORMAL if " " not in t],
+        "tudo",
+        "bem",
+        "muito",
+        "bom",
+        "dia",
+        "boa",
+        "tarde",
+        "noite",
+        "e",
+        "ai",
+        "opa",
+        "ei",
+    }
+    return len(tokens) <= 4 and all(token in allowed_tokens for token in tokens)
 
 
 def _chamar_llm_classificador(texto: str) -> dict:
@@ -134,6 +190,9 @@ def precisa_busca(texto: str) -> bool:
     """
     if _bate_keyword(texto):
         return True
+
+    if _eh_papo_informal(texto):
+        return False
 
     try:
         resultado = _chamar_llm_classificador(texto)

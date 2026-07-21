@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     # Ingestão automática (crawler de editais do IFSC)
     auto_ingest_ciclo_segundos: int = 60 * 60 * 24  # diário
 
+    # Rate limiting (proteção de flood na entrada do canal)
+    rate_limit_mensagens: int = 5
+    rate_limit_janela_segundos: int = 10
+    rate_limit_dedup_segundos: int = 5
+
     # Retrieval híbrido
     search_k: int = 12
     search_alpha: float = 0.6

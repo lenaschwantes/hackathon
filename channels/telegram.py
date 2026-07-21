@@ -13,7 +13,7 @@ from telegram.ext import Application, ContextTypes, MessageHandler, filters
 from channels.base import ChannelAdapter
 from channels.engine import _MAX_CARACTERES_MENSAGEM
 from channels.engine import responder as fake_responder
-from channels.rate_limit import MENSAGEM_LIMITE_EXCEDIDO, permitido
+from channels.rate_limit import MENSAGEM_LIMITE_EXCEDIDO, eh_duplicada, permitido
 from channels.session import carregar_sessao, salvar_sessao
 
 
@@ -41,6 +41,12 @@ class TelegramAdapter(ChannelAdapter):
         """
         user_id = str(update.effective_user.id)
         texto = update.message.text[:_MAX_CARACTERES_MENSAGEM]
+
+        if await eh_duplicada(user_id, texto):
+            await update.message.reply_text(
+                "Já tô cuidando disso pra você! Me dá um instante."
+            )
+            return
 
         if not await permitido(user_id):
             await update.message.reply_text(MENSAGEM_LIMITE_EXCEDIDO)
