@@ -130,7 +130,7 @@ def answer(question: str, k: int | None = None) -> dict:
         try:
             resposta = client.messages.parse(
                 model=settings.anthropic_model_geracao,
-                max_tokens=500,
+                max_tokens=1500,
                 system=SYSTEM,
                 messages=[
                     {
