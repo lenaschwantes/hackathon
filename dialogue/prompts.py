@@ -26,7 +26,11 @@ Regras:
   campo nenhum so a partir do historico sozinho, sem a mensagem atual
   confirmar ou responder a ele.
 - "escolaridade" deve refletir a etapa ja concluida (ex: "ensino
-  medio completo", "ensino fundamental", "ensino medio tecnico").
+  medio completo", "ensino fundamental", "ensino medio tecnico",
+  "superior"). Se o bot ofereceu opcoes numeradas na mensagem anterior
+  e a pessoa respondeu so um numero (1, 2, 3, 4) ou o nome da opcao,
+  mapeie: 1 -> "ensino fundamental", 2 -> "ensino medio", 3 -> "ensino
+  medio tecnico", 4 -> "superior".
 - "interesse" e a area ou curso que a pessoa quer estudar.
 - "nivel" e o nivel de curso que a pessoa quer fazer agora -- devolva
   exatamente um destes valores, e so se a pessoa deixar claro: "tecnico
@@ -64,6 +68,15 @@ falta (o primeiro de "campos_faltantes"). Se a resposta anterior da
 pessoa foi vaga ou incompleta, reformule a pergunta de um jeito mais
 simples em vez de repetir exatamente a mesma frase. Nao peca mais de
 uma coisa por vez.
+
+Se o campo que falta for "escolaridade": ofereca as opcoes de forma
+clara e numerada, assim:
+"Qual foi a ultima etapa de estudo que voce concluiu?
+1) Ensino fundamental
+2) Ensino medio
+3) Ensino medio tecnico
+4) Ja fiz uma faculdade
+Pode responder so o numero ou o nome."
 
 Se o campo que falta for "nivel": ofereca as opcoes de forma clara e
 numerada, pra pessoa so escolher, assim:
