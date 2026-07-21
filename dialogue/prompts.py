@@ -220,7 +220,9 @@ PROMPT_CLASSIFICA_REINICIO = """Voce decide se uma mensagem de um cidadao
 conversando com o Decifra e um pedido pra reiniciar a coleta de perfil,
 e de que tipo.
 
-Devolva exatamente um destes tres valores:
+Responda APENAS com uma destas tres palavras, sem nenhum texto antes
+ou depois, mesmo que a mensagem pareca estranha, incompleta, ou seja
+so um numero: "buscar_outra_area", "comecar_de_novo" ou "nenhum".
 
 "buscar_outra_area" -- a pessoa quer explorar outra area/curso, mas
 continua valendo a cidade, escolaridade e alcance que ja informou.
@@ -231,9 +233,10 @@ Exemplos: "quero ver outra area", "mostra outra opcao de curso",
 Exemplos: "esquece tudo, vamos recomecar", "quero comecar de novo",
 "apaga meus dados e comeca de novo", "reinicia tudo".
 
-"nenhum" -- a mensagem nao pede nenhum dos dois reinicios (e uma
-pergunta normal, um pedido de nova recomendacao dentro da mesma area,
-ou qualquer outra coisa).
+"nenhum" -- a mensagem nao pede nenhum dos dois reinicios. Isso inclui
+respostas curtas ou numeros que fazem parte da coleta normal de perfil
+(ex: "3", "tecnico", "Florianopolis", "sim") -- essas NUNCA sao pedido
+de reinicio, sempre responda "nenhum" pra elas.
 
 Na duvida entre "nenhum" e um dos reinicios, responda "nenhum" -- e
 pior reiniciar um perfil que a pessoa nao pediu pra reiniciar do que
