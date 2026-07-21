@@ -26,7 +26,11 @@ Regras:
   campo nenhum so a partir do historico sozinho, sem a mensagem atual
   confirmar ou responder a ele.
 - "escolaridade" deve refletir a etapa ja concluida (ex: "ensino
-  medio completo", "ensino fundamental", "ensino medio tecnico").
+  medio completo", "ensino fundamental", "ensino medio tecnico",
+  "superior"). Se o bot ofereceu opcoes numeradas na mensagem anterior
+  e a pessoa respondeu so um numero (1, 2, 3, 4) ou o nome da opcao,
+  mapeie: 1 -> "ensino fundamental", 2 -> "ensino medio", 3 -> "ensino
+  medio tecnico", 4 -> "superior".
 - "interesse" e a area ou curso que a pessoa quer estudar.
 - "nivel" e o nivel de curso que a pessoa quer fazer agora -- devolva
   exatamente um destes valores, e so se a pessoa deixar claro: "tecnico
@@ -64,6 +68,15 @@ falta (o primeiro de "campos_faltantes"). Se a resposta anterior da
 pessoa foi vaga ou incompleta, reformule a pergunta de um jeito mais
 simples em vez de repetir exatamente a mesma frase. Nao peca mais de
 uma coisa por vez.
+
+Se o campo que falta for "escolaridade": ofereca as opcoes de forma
+clara e numerada, assim:
+"Qual foi a ultima etapa de estudo que voce concluiu?
+1) Ensino fundamental
+2) Ensino medio
+3) Ensino medio tecnico
+4) Ja fiz uma faculdade
+Pode responder so o numero ou o nome."
 
 Se o campo que falta for "nivel": ofereca as opcoes de forma clara e
 numerada, pra pessoa so escolher, assim:
@@ -207,7 +220,9 @@ PROMPT_CLASSIFICA_REINICIO = """Voce decide se uma mensagem de um cidadao
 conversando com o Decifra e um pedido pra reiniciar a coleta de perfil,
 e de que tipo.
 
-Devolva exatamente um destes tres valores:
+Responda APENAS com uma destas tres palavras, sem nenhum texto antes
+ou depois, mesmo que a mensagem pareca estranha, incompleta, ou seja
+so um numero: "buscar_outra_area", "comecar_de_novo" ou "nenhum".
 
 "buscar_outra_area" -- a pessoa quer explorar outra area/curso, mas
 continua valendo a cidade, escolaridade e alcance que ja informou.
@@ -218,9 +233,10 @@ Exemplos: "quero ver outra area", "mostra outra opcao de curso",
 Exemplos: "esquece tudo, vamos recomecar", "quero comecar de novo",
 "apaga meus dados e comeca de novo", "reinicia tudo".
 
-"nenhum" -- a mensagem nao pede nenhum dos dois reinicios (e uma
-pergunta normal, um pedido de nova recomendacao dentro da mesma area,
-ou qualquer outra coisa).
+"nenhum" -- a mensagem nao pede nenhum dos dois reinicios. Isso inclui
+respostas curtas ou numeros que fazem parte da coleta normal de perfil
+(ex: "3", "tecnico", "Florianopolis", "sim") -- essas NUNCA sao pedido
+de reinicio, sempre responda "nenhum" pra elas.
 
 Na duvida entre "nenhum" e um dos reinicios, responda "nenhum" -- e
 pior reiniciar um perfil que a pessoa nao pediu pra reiniciar do que
