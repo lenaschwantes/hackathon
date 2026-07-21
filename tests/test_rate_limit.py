@@ -44,6 +44,29 @@ class RedisQuebrado:
         raise RedisError("conexão recusada")
 
 
+class FakeRedisComExpire(FakeRedis):
+    """Redis fake que simula expiração de chaves por janela de tempo."""
+
+    def __init__(self):
+        super().__init__()
+        self._expirations: dict[str, float] = {}
+        self._now = 0.0
+
+    async def incr(self, chave):
+        expiry = self._expirations.get(chave)
+        if expiry is not None and self._now >= expiry:
+            self.contadores.pop(chave, None)
+            self._expirations.pop(chave, None)
+        return await super().incr(chave)
+
+    async def expire(self, chave, segundos):
+        self._expirations[chave] = self._now + segundos
+        return True
+
+    def advance(self, segundos):
+        self._now += segundos
+
+
 def test_dentro_do_limite_passa(monkeypatch):
     fake = FakeRedis()
     monkeypatch.setattr(rate_limit, "_get_redis", lambda: fake)
@@ -105,3 +128,17 @@ def test_dedup_falha_aberta_quando_redis_cai(monkeypatch):
     monkeypatch.setattr(rate_limit, "_get_redis", lambda: RedisQuebrado())
     # Redis fora: trata como NÃO duplicada
     assert asyncio.run(rate_limit.eh_duplicada("user1", "oi")) is False
+
+
+def test_permitido_reseta_apos_janela(monkeypatch):
+    fake = FakeRedisComExpire()
+    monkeypatch.setattr(rate_limit, "_get_redis", lambda: fake)
+    monkeypatch.setattr(rate_limit.settings, "rate_limit_mensagens", 2)
+    monkeypatch.setattr(rate_limit.settings, "rate_limit_janela_segundos", 10)
+
+    assert asyncio.run(rate_limit.permitido("user1")) is True
+    assert asyncio.run(rate_limit.permitido("user1")) is True
+    assert asyncio.run(rate_limit.permitido("user1")) is False
+
+    fake.advance(11)
+    assert asyncio.run(rate_limit.permitido("user1")) is True
