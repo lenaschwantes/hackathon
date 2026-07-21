@@ -11,6 +11,7 @@ from datetime import date
 from dialogue import recommendation
 from dialogue.profile import Perfil
 from dialogue.recommendation import gerar_recomendacao, montar_contexto, quer_nova_recomendacao
+from recommend.calendario import Janela
 from recommend.opportunities import Oportunidade
 
 _RESULTADO_VAZIO = {"na_cidade": [], "regiao": [], "ead": [], "outras_cidades": [], "proxima": None}
@@ -186,6 +187,105 @@ class TestMontarContexto:
         contexto = montar_contexto(perfil, date(2026, 7, 10))
 
         assert contexto["fora_de_sc"] is False
+
+
+class TestCalendarioNaRecomendacao:
+    """
+    Ordem de precedencia da segunda fonte estruturada (calendario): so
+    e consultado quando o catalogo de oportunidades concretas nao tem
+    nada aberto agora nem uma proxima vaga especifica -- ver
+    `montar_contexto`.
+    """
+
+    def _janela(self, **kwargs):
+        base = dict(
+            nivel="superior",
+            forma_ingresso="vestibular",
+            semestre_letivo="2027.1",
+            inicio="2026-09-01",
+            fim="2026-09-20",
+            data_confirmada=True,
+            observacao=None,
+        )
+        base.update(kwargs)
+        return Janela(**base)
+
+    def test_oportunidade_aberta_no_catalogo_dispensa_o_calendario(self, monkeypatch):
+        catalogo = [_op(cidade="Blumenau", inicio="2026-07-01", fim="2026-07-20")]
+        monkeypatch.setattr(recommendation, "recomendar", _fake_recomendar(catalogo))
+
+        def _calendario_nao_deveria_ser_chamado(nivel, hoje, **kwargs):
+            raise AssertionError("calendario nao deveria ser consultado com oportunidade aberta")
+
+        monkeypatch.setattr(recommendation, "consultar_calendario", _calendario_nao_deveria_ser_chamado)
+        perfil = Perfil(cidade="Blumenau", escolaridade="ensino medio completo", interesse="tecnologia")
+
+        contexto = montar_contexto(perfil, date(2026, 7, 10))
+
+        assert contexto["calendario"] is None
+
+    def test_proxima_concreta_do_catalogo_dispensa_o_calendario(self, monkeypatch):
+        catalogo = [_op(cidade="Blumenau", inicio="2026-08-01", fim="2026-08-20")]
+        monkeypatch.setattr(recommendation, "recomendar", _fake_recomendar(catalogo))
+
+        def _calendario_nao_deveria_ser_chamado(nivel, hoje, **kwargs):
+            raise AssertionError("calendario nao deveria ser consultado com proxima concreta")
+
+        monkeypatch.setattr(recommendation, "consultar_calendario", _calendario_nao_deveria_ser_chamado)
+        perfil = Perfil(cidade="Blumenau", escolaridade="ensino medio completo", interesse="tecnologia")
+
+        contexto = montar_contexto(perfil, date(2026, 7, 10))
+
+        assert contexto["calendario"] is None
+
+    def test_sem_nada_no_catalogo_consulta_o_calendario_com_o_nivel_do_perfil(self, monkeypatch):
+        monkeypatch.setattr(recommendation, "recomendar", _fake_recomendar([]))
+        capturado = {}
+
+        def fake_consultar_calendario(nivel, hoje, **kwargs):
+            capturado["nivel"] = nivel
+            capturado["hoje"] = hoje
+            return {"abertas_agora": [], "proxima": self._janela(), "a_confirmar": []}
+
+        monkeypatch.setattr(recommendation, "consultar_calendario", fake_consultar_calendario)
+        perfil = Perfil(
+            cidade="Blumenau", escolaridade="ensino medio completo", interesse="tecnologia", nivel="superior"
+        )
+
+        contexto = montar_contexto(perfil, date(2026, 7, 10))
+
+        assert capturado["nivel"] == "superior"
+        assert capturado["hoje"] == date(2026, 7, 10)
+        assert contexto["calendario"]["proxima"]["forma_ingresso"] == "vestibular"
+        assert contexto["calendario"]["proxima"]["inicio"] == "2026-09-01"
+        assert contexto["calendario"]["abertas_agora"] == []
+        assert contexto["calendario"]["a_confirmar"] == []
+
+    def test_janela_a_confirmar_chega_ao_contexto_sem_data_inventada(self, monkeypatch):
+        monkeypatch.setattr(recommendation, "recomendar", _fake_recomendar([]))
+
+        def fake_consultar_calendario(nivel, hoje, **kwargs):
+            janela_sem_data = self._janela(
+                forma_ingresso="Sisu",
+                inicio=None,
+                fim=None,
+                data_confirmada=False,
+                observacao="Data a confirmar conforme cronograma do MEC",
+            )
+            return {"abertas_agora": [], "proxima": None, "a_confirmar": [janela_sem_data]}
+
+        monkeypatch.setattr(recommendation, "consultar_calendario", fake_consultar_calendario)
+        perfil = Perfil(
+            cidade="Blumenau", escolaridade="ensino medio completo", interesse="tecnologia", nivel="superior"
+        )
+
+        contexto = montar_contexto(perfil, date(2026, 7, 10))
+
+        assert contexto["calendario"]["proxima"] is None
+        assert len(contexto["calendario"]["a_confirmar"]) == 1
+        assert contexto["calendario"]["a_confirmar"][0]["inicio"] is None
+        assert contexto["calendario"]["a_confirmar"][0]["fim"] is None
+        assert contexto["calendario"]["a_confirmar"][0]["forma_ingresso"] == "Sisu"
 
 
 class TestGerarRecomendacao:

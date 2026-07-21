@@ -19,6 +19,7 @@ from config.settings import settings
 from dialogue.geografia import cidade_em_sc
 from dialogue.profile import Perfil
 from dialogue.prompts import PROMPT_CLASSIFICA_PEDIDO_RECOMENDACAO, PROMPT_RECOMENDACAO
+from recommend.calendario import consultar_calendario
 from recommend.opportunities import recomendar
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,15 @@ def montar_contexto(perfil: Perfil, hoje: date) -> dict:
     Cidade fora de Santa Catarina forca o alcance efetivo pra "ead" --
     ver `_alcance_efetivo` -- porque nenhuma oportunidade presencial do
     IFSC alcanca quem mora fora do estado.
+
+    Quando o catalogo nao tem nada aberto agora nem uma proxima vaga
+    especifica pro nivel da pessoa, consulta `recommend.calendario`
+    (segunda fonte estruturada, tambem sem LLM) e inclui o resultado em
+    "calendario" -- pra pessoa nunca sair sem nenhuma direcao, mesmo sem
+    edital concreto disponivel. Oportunidade concreta do catalogo (curso,
+    campus, link) e sempre mais especifica que a janela generica do
+    calendario oficial, entao "calendario" so e preenchido quando o
+    catalogo de fato nao tem nada a oferecer.
     """
     fora_de_sc = bool(perfil.cidade) and not cidade_em_sc(perfil.cidade)
     resultado = recomendar(
@@ -68,6 +78,26 @@ def montar_contexto(perfil: Perfil, hoje: date) -> dict:
         modalidade=perfil.modalidade,
         alcance=_alcance_efetivo(perfil, fora_de_sc),
     )
+
+    algo_aberto_no_catalogo = any(
+        resultado[camada] for camada in ("na_cidade", "regiao", "ead", "outras_cidades")
+    )
+    proxima_do_catalogo = resultado["proxima"].model_dump(mode="json") if resultado["proxima"] else None
+
+    # Calendario e segunda fonte estruturada, so consultado quando o
+    # catalogo de oportunidades concretas nao tem nada aberto nem uma
+    # proxima vaga especifica pro nivel da pessoa -- oportunidade
+    # concreta (curso, campus, link) e sempre mais especifica que a
+    # janela generica do calendario oficial, entao vence quando existe.
+    calendario = None
+    if not algo_aberto_no_catalogo and proxima_do_catalogo is None:
+        consulta = consultar_calendario(perfil.nivel, hoje)
+        calendario = {
+            "abertas_agora": [j.model_dump(mode="json") for j in consulta["abertas_agora"]],
+            "proxima": consulta["proxima"].model_dump(mode="json") if consulta["proxima"] else None,
+            "a_confirmar": [j.model_dump(mode="json") for j in consulta["a_confirmar"]],
+        }
+
     return {
         "interesse": perfil.interesse,
         "fora_de_sc": fora_de_sc,
@@ -75,7 +105,8 @@ def montar_contexto(perfil: Perfil, hoje: date) -> dict:
         "regiao": [o.model_dump(mode="json") for o in resultado["regiao"]],
         "ead": [o.model_dump(mode="json") for o in resultado["ead"]],
         "outras_cidades": [o.model_dump(mode="json") for o in resultado["outras_cidades"]],
-        "proxima": resultado["proxima"].model_dump(mode="json") if resultado["proxima"] else None,
+        "proxima": proxima_do_catalogo,
+        "calendario": calendario,
     }
 
 

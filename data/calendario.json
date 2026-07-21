@@ -1,0 +1,245 @@
+[
+  {
+    "nivel": "proeja",
+    "forma_ingresso": "cadastro de reserva",
+    "semestre_letivo": "2026.2",
+    "inicio": "2026-07-01",
+    "fim": "2026-07-24",
+    "data_confirmada": true,
+    "observacao": "Proeja Técnico em Cozinha, Câmpus Florianópolis-Continente"
+  },
+  {
+    "nivel": "FIC",
+    "forma_ingresso": "inscrição",
+    "semestre_letivo": "2026.2",
+    "inicio": "2026-08-11",
+    "fim": "2026-08-31",
+    "data_confirmada": true,
+    "observacao": null
+  },
+  {
+    "nivel": "FIC",
+    "forma_ingresso": "inscrição",
+    "semestre_letivo": "2026.2",
+    "inicio": "2026-10-07",
+    "fim": "2026-10-27",
+    "data_confirmada": true,
+    "observacao": null
+  },
+  {
+    "nivel": "especialização",
+    "forma_ingresso": "inscrição",
+    "semestre_letivo": "2026.2",
+    "inicio": "2026-07-01",
+    "fim": "2026-07-21",
+    "data_confirmada": true,
+    "observacao": "EaD em Educação para as Relações Étnico-Raciais"
+  },
+  {
+    "nivel": "especialização",
+    "forma_ingresso": "inscrição",
+    "semestre_letivo": "2026.2",
+    "inicio": "2026-08-03",
+    "fim": "2026-08-24",
+    "data_confirmada": true,
+    "observacao": null
+  },
+  {
+    "nivel": "técnico integrado",
+    "forma_ingresso": "prova",
+    "semestre_letivo": "2027.1",
+    "inicio": "2026-09-28",
+    "fim": "2026-10-22",
+    "data_confirmada": true,
+    "observacao": null
+  },
+  {
+    "nivel": "técnico integrado",
+    "forma_ingresso": "sorteio",
+    "semestre_letivo": "2027.1",
+    "inicio": "2026-09-28",
+    "fim": "2026-11-06",
+    "data_confirmada": true,
+    "observacao": null
+  },
+  {
+    "nivel": "técnico integrado",
+    "forma_ingresso": "ordem de inscrição",
+    "semestre_letivo": "2027.1",
+    "inicio": "2026-12-07",
+    "fim": "2027-01-12",
+    "data_confirmada": true,
+    "observacao": null
+  },
+  {
+    "nivel": "técnico integrado",
+    "forma_ingresso": "ordem de inscrição",
+    "semestre_letivo": "2027.1",
+    "inicio": "2027-01-18",
+    "fim": "2027-01-25",
+    "data_confirmada": true,
+    "observacao": "Vagas não preenchidas nas janelas anteriores"
+  },
+  {
+    "nivel": "técnico subsequente",
+    "forma_ingresso": "prova",
+    "semestre_letivo": "2027.1",
+    "inicio": "2026-09-28",
+    "fim": "2026-10-22",
+    "data_confirmada": true,
+    "observacao": null
+  },
+  {
+    "nivel": "técnico subsequente",
+    "forma_ingresso": "sorteio",
+    "semestre_letivo": "2027.1",
+    "inicio": "2026-09-28",
+    "fim": "2026-11-06",
+    "data_confirmada": true,
+    "observacao": null
+  },
+  {
+    "nivel": "técnico subsequente",
+    "forma_ingresso": "ordem de inscrição",
+    "semestre_letivo": "2027.1",
+    "inicio": "2026-12-07",
+    "fim": "2027-01-12",
+    "data_confirmada": true,
+    "observacao": null
+  },
+  {
+    "nivel": "técnico subsequente",
+    "forma_ingresso": "ordem de inscrição",
+    "semestre_letivo": "2027.1",
+    "inicio": "2027-01-18",
+    "fim": "2027-01-25",
+    "data_confirmada": true,
+    "observacao": "Vagas não preenchidas nas janelas anteriores"
+  },
+  {
+    "nivel": "proeja",
+    "forma_ingresso": "sorteio",
+    "semestre_letivo": "2027.1",
+    "inicio": "2026-09-28",
+    "fim": "2026-11-06",
+    "data_confirmada": true,
+    "observacao": null
+  },
+  {
+    "nivel": "proeja",
+    "forma_ingresso": "ordem de inscrição",
+    "semestre_letivo": "2027.1",
+    "inicio": "2027-01-18",
+    "fim": "2027-01-25",
+    "data_confirmada": true,
+    "observacao": "Vagas não preenchidas"
+  },
+  {
+    "nivel": "superior",
+    "forma_ingresso": "vestibular",
+    "semestre_letivo": "2027.1",
+    "inicio": "2026-09-28",
+    "fim": "2026-10-22",
+    "data_confirmada": true,
+    "observacao": null
+  },
+  {
+    "nivel": "superior",
+    "forma_ingresso": "Sisu",
+    "semestre_letivo": "2027.1",
+    "inicio": null,
+    "fim": null,
+    "data_confirmada": false,
+    "observacao": "Data a confirmar conforme cronograma do MEC"
+  },
+  {
+    "nivel": "superior",
+    "forma_ingresso": "cadastro de reserva",
+    "semestre_letivo": "2027.1",
+    "inicio": null,
+    "fim": null,
+    "data_confirmada": false,
+    "observacao": "Vagas não preenchidas do vestibular, seleção por histórico escolar; data a confirmar"
+  },
+  {
+    "nivel": "FIC",
+    "forma_ingresso": "inscrição",
+    "semestre_letivo": "2027.1",
+    "inicio": "2026-12-18",
+    "fim": "2027-02-04",
+    "data_confirmada": true,
+    "observacao": null
+  },
+  {
+    "nivel": "FIC",
+    "forma_ingresso": "inscrição",
+    "semestre_letivo": "2027.1",
+    "inicio": "2027-03-08",
+    "fim": "2027-03-29",
+    "data_confirmada": true,
+    "observacao": null
+  },
+  {
+    "nivel": "mestrado",
+    "forma_ingresso": "inscrição",
+    "semestre_letivo": "2027.1",
+    "inicio": "2026-08-17",
+    "fim": "2026-09-30",
+    "data_confirmada": true,
+    "observacao": null
+  },
+  {
+    "nivel": "especialização",
+    "forma_ingresso": "inscrição",
+    "semestre_letivo": "2027.1",
+    "inicio": "2026-09-01",
+    "fim": "2026-09-21",
+    "data_confirmada": true,
+    "observacao": null
+  },
+  {
+    "nivel": "especialização",
+    "forma_ingresso": "inscrição",
+    "semestre_letivo": "2027.1",
+    "inicio": "2026-10-01",
+    "fim": "2026-10-20",
+    "data_confirmada": true,
+    "observacao": null
+  },
+  {
+    "nivel": "especialização",
+    "forma_ingresso": "inscrição",
+    "semestre_letivo": "2027.1",
+    "inicio": "2026-11-03",
+    "fim": "2026-11-23",
+    "data_confirmada": true,
+    "observacao": null
+  },
+  {
+    "nivel": "especialização",
+    "forma_ingresso": "inscrição",
+    "semestre_letivo": "2027.1",
+    "inicio": "2026-11-24",
+    "fim": "2026-12-14",
+    "data_confirmada": true,
+    "observacao": null
+  },
+  {
+    "nivel": "especialização",
+    "forma_ingresso": "inscrição",
+    "semestre_letivo": "2027.1",
+    "inicio": "2027-02-01",
+    "fim": "2027-02-22",
+    "data_confirmada": true,
+    "observacao": null
+  },
+  {
+    "nivel": "especialização",
+    "forma_ingresso": "inscrição",
+    "semestre_letivo": "2027.1",
+    "inicio": "2027-03-01",
+    "fim": "2027-03-22",
+    "data_confirmada": true,
+    "observacao": null
+  }
+]
