@@ -3,8 +3,10 @@ Motor de resposta real, ligando o canal ao RAG.
 
 Este arquivo é o único adaptador entre um canal (Telegram, etc) e o
 motor de verdade (`retrieval.generate.answer`). Antes de chamar o RAG,
-verifica se o perfil da pessoa já está completo -- se não estiver,
-conduz a coleta de perfil em vez de responder com o RAG.
+verifica se há um pedido de reinício em andamento ou recém-feito (pode
+ocorrer em qualquer ponto da conversa); em seguida, se o perfil da
+pessoa já está completo -- se não estiver, conduz a coleta de perfil
+em vez de responder com o RAG.
 """
 
 import json
@@ -17,8 +19,14 @@ import anthropic
 from config.settings import settings
 from dialogue.intent import precisa_busca
 from dialogue.profile import Perfil, determinar_fase, extrair_perfil
-from dialogue.prompts import PROMPT_COLETA, PROMPT_CONVERSA
+from dialogue.prompts import PROMPT_COLETA, PROMPT_CONVERSA, PROMPT_CONFIRMACAO_REINICIO
 from dialogue.recommendation import gerar_recomendacao, quer_nova_recomendacao
+from dialogue.reset import (
+    classificar_pedido_reinicio,
+    eh_confirmacao_positiva,
+    limpar_para_outra_area,
+    perfil_zerado,
+)
 from retrieval.generate import answer
 
 logger = logging.getLogger(__name__)
@@ -26,6 +34,10 @@ logger = logging.getLogger(__name__)
 _MENSAGEM_FALLBACK = (
     "Desculpa, tive um problema pra buscar essa informação agora. "
     "Tenta de novo em instantes, por favor."
+)
+
+_MENSAGEM_FALLBACK_CONFIRMACAO_REINICIO = (
+    "Quer mesmo apagar tudo e começar de novo? Responde 'sim' pra confirmar."
 )
 
 _EXTENSOES = (".pdf", ".docx", ".doc", ".odt", ".pptx")
@@ -120,9 +132,35 @@ def _gerar_resposta_conversa(texto: str) -> str:
     return next(b.text for b in resposta.content if b.type == "text")
 
 
+def _gerar_confirmacao_reinicio(texto: str) -> str:
+    """
+    Usa o LLM pra formular a pergunta de confirmação de reinício,
+    de forma acolhedora, com base no que a pessoa pediu.
+    """
+    client = anthropic.Anthropic()
+    resposta = client.messages.create(
+        model=settings.anthropic_model_geracao,
+        max_tokens=100,
+        system=PROMPT_CONFIRMACAO_REINICIO,
+        messages=[{"role": "user", "content": texto}],
+    )
+    return next(b.text for b in resposta.content if b.type == "text")
+
+
 def responder(user_id: str, texto: str, sessao: dict) -> str:
     """
     Recebe o id do usuário, o texto que ele mandou, e a sessão atual.
+
+    Antes de qualquer outra coisa, verifica se há um pedido de
+    reinício em andamento (`fase_dialogo == "confirmando_reinicio"`)
+    ou recém-feito nesta mensagem (`classificar_pedido_reinicio`), já
+    que isso pode ser pedido a qualquer momento da conversa,
+    independente da fase de coleta/recomendação/RAG. Ao entrar em
+    "confirmando_reinicio", a fase anterior é guardada em
+    `sessao["fase_dialogo_anterior"]`, pra poder ser restaurada caso a
+    pessoa recue da confirmação -- sem isso, uma recusa jogaria
+    incorretamente qualquer perfil incompleto direto pra fase
+    "completo".
 
     Se o perfil ainda não estiver completo, extrai o que der da
     mensagem (com o histórico recente como contexto pra resolver
@@ -142,6 +180,44 @@ def responder(user_id: str, texto: str, sessao: dict) -> str:
     sem gastar retrieval nem citar fonte nessa segunda opção.
     """
     texto = texto[:_MAX_CARACTERES_MENSAGEM]
+
+    # Reinício: verificado antes de qualquer outra coisa, pois pode
+    # ser pedido em qualquer ponto da conversa.
+    if sessao.get("fase_dialogo") == "confirmando_reinicio":
+        if eh_confirmacao_positiva(texto):
+            sessao["perfil"] = perfil_zerado()
+            sessao["fase_dialogo"] = "coletando"
+            sessao["historico"] = []
+            sessao.pop("fase_dialogo_anterior", None)
+            return "Prontinho, apaguei tudo! Vamos começar de novo: em qual cidade você mora?"
+        else:
+            # Restaura a fase em que a pessoa estava antes de pedir o
+            # reinício (pode ter sido "coletando" ou "completo"). O
+            # fallback "completo" só entra em cena defensivamente, se
+            # por algum motivo a sessão chegar aqui sem o campo salvo
+            # (ex.: sessão antiga no Redis, de antes desse campo
+            # existir).
+            sessao["fase_dialogo"] = sessao.pop("fase_dialogo_anterior", "completo")
+            return "Sem problema, mantive seus dados como estavam."
+
+    if sessao.get("perfil"):
+        pedido = classificar_pedido_reinicio(texto)
+        if pedido == "buscar_outra_area":
+            sessao["perfil"] = limpar_para_outra_area(sessao["perfil"])
+            sessao["fase_dialogo"] = determinar_fase(Perfil(**sessao["perfil"]))
+            try:
+                return _gerar_pergunta_coleta(Perfil(**sessao["perfil"]))
+            except Exception as exc:
+                _logar_falha("gerar pergunta apos buscar outra area", user_id, exc)
+                return _MENSAGEM_FALLBACK
+        elif pedido == "comecar_de_novo":
+            sessao["fase_dialogo_anterior"] = sessao.get("fase_dialogo")
+            sessao["fase_dialogo"] = "confirmando_reinicio"
+            try:
+                return _gerar_confirmacao_reinicio(texto)
+            except Exception as exc:
+                _logar_falha("gerar confirmacao de reinicio", user_id, exc)
+                return _MENSAGEM_FALLBACK_CONFIRMACAO_REINICIO
 
     perfil_atual = sessao.get("perfil") or {}
     perfil = Perfil(**perfil_atual)
