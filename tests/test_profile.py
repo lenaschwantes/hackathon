@@ -143,6 +143,68 @@ def test_extracao_nao_apaga_campo_ja_preenchido(monkeypatch):
     assert resultado.interesse == "tecnologia"
 
 
+def test_regressao_nao_sei_depois_area_real_avanca_o_perfil(monkeypatch):
+    """
+    Reproduz o dialogo real reportado: "Ainda não sei" e depois
+    "Saúde", com cidade/escolaridade/nivel ja preenchidos (so falta
+    interesse). A primeira mensagem nao deve preencher interesse (o
+    LLM corretamente nao inventa uma area); a segunda deve preencher
+    "Saúde" normalmente e completar o perfil.
+    """
+    perfil_atual = {
+        "cidade": "Blumenau", "escolaridade": "ensino medio completo",
+        "interesse": None, "nivel": "tecnico integrado", "modalidade": None, "alcance": None,
+    }
+    historico = [
+        {"de": "usuario", "texto": "moro em blumenau, terminei o ensino medio"},
+        {"de": "bot", "texto": "Legal! Me conta, qual área te interessa?"},
+    ]
+
+    def fake_chamar_llm_sem_area(texto, perfil_atual, historico=None):
+        return {**perfil_atual, "interesse": None, "modalidade": None, "alcance": None}
+
+    monkeypatch.setattr(profile, "_chamar_llm", fake_chamar_llm_sem_area)
+    resultado_1 = extrair_perfil("Ainda não sei", perfil_atual, historico=historico)
+
+    assert resultado_1.interesse is None
+    assert determinar_fase(resultado_1) == "coletando"
+
+    historico.append({"de": "usuario", "texto": "Ainda não sei"})
+    historico.append({"de": "bot", "texto": "Sem problema! Pode ser algo bem amplo, tipo saúde, tecnologia..."})
+
+    def fake_chamar_llm_com_saude(texto, perfil_atual, historico=None):
+        return {**perfil_atual, "interesse": "Saúde", "modalidade": None, "alcance": None}
+
+    monkeypatch.setattr(profile, "_chamar_llm", fake_chamar_llm_com_saude)
+    resultado_2 = extrair_perfil("Saúde", resultado_1.model_dump(), historico=historico)
+
+    assert resultado_2.interesse == "Saúde"
+    assert determinar_fase(resultado_2) == "completo"
+
+
+def test_insistencia_dupla_em_nao_sei_avanca_sem_area_especifica(monkeypatch):
+    perfil_atual = {
+        "cidade": "Blumenau", "escolaridade": "ensino medio completo",
+        "interesse": None, "nivel": "tecnico integrado", "modalidade": None, "alcance": None,
+    }
+
+    def fake_chamar_llm_sem_area(texto, perfil_atual, historico=None):
+        return {**perfil_atual, "interesse": None, "modalidade": None, "alcance": None}
+
+    monkeypatch.setattr(profile, "_chamar_llm", fake_chamar_llm_sem_area)
+
+    historico = [{"de": "bot", "texto": "Qual área te interessa?"}]
+    resultado_1 = extrair_perfil("não sei", perfil_atual, historico=historico)
+    assert resultado_1.interesse is None
+
+    historico.append({"de": "usuario", "texto": "não sei"})
+    historico.append({"de": "bot", "texto": "Sem problema! Pode ser algo bem amplo..."})
+    resultado_2 = extrair_perfil("não sei", resultado_1.model_dump(), historico=historico)
+
+    assert resultado_2.interesse == "sem preferência definida"
+    assert determinar_fase(resultado_2) == "completo"
+
+
 def test_extracao_nao_apaga_alcance_ja_preenchido(monkeypatch):
     def fake_chamar_llm(texto, perfil_atual, historico=None):
         return {

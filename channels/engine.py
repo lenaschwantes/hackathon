@@ -276,12 +276,23 @@ def responder(
                 sessao["fase_dialogo"] = sessao.pop("fase_dialogo_anterior", "completo")
                 return "Sem problema, mantive seus dados como estavam."
 
-        # `any(...)` em vez de só checar a chave: um perfil recem-criado
-        # (`perfil_vazio()`) já é um dict não-vazio, só que com todos os
-        # campos None -- sem essa checagem, classificar_pedido_reinicio()
-        # rodaria (Anthropic pago) em toda mensagem desde o segundo turno,
-        # mesmo antes de existir qualquer dado real pra reiniciar.
-        if any((sessao.get("perfil") or {}).values()):
+        # So considera pedido de reinicio com o perfil ja completo.
+        # "buscar outra area" (trocar de area preservando cidade/
+        # escolaridade/alcance) e "comecar de novo" (limpar tudo) so
+        # fazem sentido de verdade depois que ha algo definido pra
+        # trocar/descartar -- e, na pratica, o classificador (que so
+        # ve o texto solto, sem saber que pergunta o bot acabou de
+        # fazer) e pouco confiavel durante a coleta: confirmado ao
+        # vivo que "quero tecnologia" (primeira resposta de interesse)
+        # e "topo ir pra uma cidade proxima" (resposta de alcance)
+        # foram classificados incorretamente como buscar_outra_area,
+        # descartando a mensagem e travando a coleta em loop. Corrigir
+        # um campo errado durante a coleta ja e resolvido pelo proprio
+        # extrator (ele sobrescreve quando a pessoa da um valor novo),
+        # entao restringir o classificador ao perfil completo elimina
+        # os falsos positivos sem perder um caso de uso real.
+        perfil_para_checar_reinicio = Perfil(**(sessao.get("perfil") or {}))
+        if determinar_fase(perfil_para_checar_reinicio) == "completo":
             pedido = classificar_pedido_reinicio(texto)
             if pedido == "buscar_outra_area":
                 sessao["perfil"] = limpar_para_outra_area(sessao["perfil"])

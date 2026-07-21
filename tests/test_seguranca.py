@@ -405,6 +405,7 @@ class TestEntradaMalformada:
 
     @pytest.mark.parametrize("texto", _CASOS_MALFORMADOS)
     def test_responder_com_perfil_completo_nunca_levanta_excecao(self, monkeypatch, texto):
+        monkeypatch.setattr(engine, "classificar_pedido_reinicio", lambda t: "nenhum")
         monkeypatch.setattr(engine, "quer_nova_recomendacao", lambda t: False)
         monkeypatch.setattr(engine, "precisa_busca", lambda t: True)
         monkeypatch.setattr(engine, "answer", lambda t: {"answer": "resposta ok", "sources": []})
@@ -475,6 +476,7 @@ class TestVazamentoDeSegredo:
                 f"401 client error from Anthropic, Authorization: Bearer {self._SEGREDO}"
             )
 
+        monkeypatch.setattr(engine, "classificar_pedido_reinicio", lambda t: "nenhum")
         monkeypatch.setattr(engine, "quer_nova_recomendacao", lambda t: False)
         monkeypatch.setattr(engine, "precisa_busca", lambda t: True)
         monkeypatch.setattr(engine, "answer", _answer_com_segredo_na_excecao)

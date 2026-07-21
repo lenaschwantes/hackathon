@@ -9,6 +9,8 @@ campos que conseguiu entender -- nunca apaga o que ja estava preenchido.
 
 import json
 import logging
+import re
+import unicodedata
 from typing import Optional
 
 import anthropic
@@ -49,6 +51,42 @@ OPCOES_NIVEL: tuple[tuple[str, str], ...] = (
 # só o suficiente pra resolver uma referência à mensagem anterior, sem
 # inflar o prompt.
 _MAX_HISTORICO_NO_PROMPT = 4
+
+# Valor aceito pra "interesse" quando a pessoa insiste que nao sabe --
+# nao-vazio de proposito, pra satisfazer campos_essenciais_completos()
+# sem precisar de nenhum ajuste ali. Ver _eh_resposta_nao_sei().
+_INTERESSE_SEM_PREFERENCIA = "sem preferência definida"
+
+_RESPOSTAS_NAO_SEI = frozenset(
+    {
+        "nao sei", "ainda nao sei", "num sei", "sei nao", "nao sei bem",
+        "nao sei ainda", "nao faco ideia", "sem ideia", "nao tenho ideia",
+        "nao tenho certeza", "qualquer coisa", "tanto faz",
+    }
+)
+
+_PONTUACAO_FINAL = re.compile(r"[!.,;?]+$")
+
+
+def _normaliza(texto: str) -> str:
+    """Normaliza texto para comparação: minúsculo, sem acento, sem pontuação final."""
+    sem_acento = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode()
+    return _PONTUACAO_FINAL.sub("", sem_acento.strip().lower()).strip()
+
+
+def _eh_resposta_nao_sei(texto: str) -> bool:
+    """Reconhece uma resposta de 'nao sei' (ou variacao) pro campo de interesse."""
+    return _normaliza(texto) in _RESPOSTAS_NAO_SEI
+
+
+def _ultima_mensagem_do_usuario(historico: list[dict] | None) -> str | None:
+    """Devolve o texto da ultima mensagem marcada 'de': 'usuario' no historico, se houver."""
+    if not historico:
+        return None
+    for turno in reversed(historico):
+        if turno.get("de") == "usuario":
+            return turno.get("texto")
+    return None
 
 
 class Perfil(BaseModel):
@@ -144,6 +182,19 @@ def extrair_perfil(texto: str, perfil_atual: dict, historico: list[dict] | None 
         valor_novo = bruto.get(campo)
         if valor_novo:
             mesclado[campo] = valor_novo
+
+    # "Nao sei" pro campo de interesse: na primeira vez, nao preenche
+    # nada (o LLM corretamente devolveu null acima) -- o bot reformula
+    # pedindo exemplos, comportamento normal do PROMPT_COLETA. So na
+    # SEGUNDA vez seguida que a pessoa insiste (mensagem atual e a
+    # anterior dela no historico sao ambas "nao sei") e que aceita e
+    # avanca sem area especifica -- sem isso, alguem que genuinamente
+    # nao sabe fica preso pra sempre na mesma pergunta, ja que
+    # "interesse" e campo essencial.
+    if not mesclado.get("interesse") and _eh_resposta_nao_sei(texto):
+        anterior = _ultima_mensagem_do_usuario(historico)
+        if anterior is not None and _eh_resposta_nao_sei(anterior):
+            mesclado["interesse"] = _INTERESSE_SEM_PREFERENCIA
 
     try:
         return Perfil(**mesclado)

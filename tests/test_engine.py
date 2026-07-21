@@ -7,9 +7,27 @@ recomendacao sao isoladas em funcoes proprias (`extrair_perfil`,
 modulo `engine`.
 """
 
+import pytest
+
 from channels import engine
 from channels.engine import _MENSAGEM_FALLBACK, responder
 from dialogue.profile import Perfil
+
+
+@pytest.fixture(autouse=True)
+def _sem_classificador_de_reinicio_real(monkeypatch):
+    """
+    Autouse: garante que nenhum teste deste arquivo bata na API real do
+    Anthropic via `classificar_pedido_reinicio` quando a chave local for
+    valida -- sem isso, qualquer teste que exercite o perfil ja
+    completo sem mockar esse classificador explicitamente faria uma
+    chamada de rede de verdade (lenta e sujeita a rate limit),
+    violando a promessa do docstring deste arquivo. Testes que
+    precisam testar o classificador de verdade (`TestReinicio`,
+    `TestBotoesDeReinicio`) sobrescrevem isso normalmente com seu
+    proprio `monkeypatch.setattr` dentro do corpo do teste.
+    """
+    monkeypatch.setattr(engine, "classificar_pedido_reinicio", lambda texto: "nenhum")
 
 
 def _sessao(perfil: dict, fase: str = "coletando") -> dict:
@@ -221,22 +239,27 @@ class TestReinicio:
     só existe em `channels/engine.py`.
     """
 
-    def test_perfil_sem_nenhum_campo_preenchido_nao_chama_classificador_de_reinicio(self, monkeypatch):
-        # Perfil recem-criado (perfil_vazio()) e um dict nao-vazio, mas
-        # com tudo None -- nao ha nada pra reiniciar ainda, entao o
-        # classificador (Anthropic pago) nem deveria ser chamado.
+    def test_perfil_incompleto_nao_chama_classificador_de_reinicio(self, monkeypatch):
+        # Durante a coleta (perfil ainda incompleto -- vazio ou com
+        # alguns campos), o classificador de reinicio nao roda: ele so
+        # ve o texto solto, sem saber que pergunta o bot acabou de
+        # fazer, e e pouco confiavel distinguindo "respondendo a
+        # pergunta atual" de "pedindo reinicio" -- confirmado ao vivo,
+        # respostas normais de interesse/alcance foram classificadas
+        # incorretamente como buscar_outra_area, travando a coleta em
+        # loop. Por isso so roda com o perfil ja completo.
         def _classificador_nao_deveria_ser_chamado(texto):
-            raise AssertionError("classificar_pedido_reinicio não deveria ser chamado com perfil vazio")
+            raise AssertionError("classificar_pedido_reinicio não deveria ser chamado com perfil incompleto")
 
         monkeypatch.setattr(engine, "classificar_pedido_reinicio", _classificador_nao_deveria_ser_chamado)
         monkeypatch.setattr(engine, "extrair_perfil", lambda texto, perfil_atual, historico=None: Perfil(**perfil_atual))
         monkeypatch.setattr(engine, "_gerar_pergunta_coleta", lambda perfil: "Pergunta de coleta.")
 
         perfil_vazio = {c: None for c in ("cidade", "escolaridade", "interesse", "nivel", "modalidade", "alcance")}
-        sessao = _sessao(perfil_vazio)
-        responder("user-1", "oi", sessao)  # não deve levantar AssertionError
+        responder("user-1", "oi", _sessao(perfil_vazio))  # não deve levantar AssertionError
+        responder("user-1", "moro em Blumenau", _sessao(dict(_PERFIL_INCOMPLETO)))  # idem
 
-    def test_perfil_com_algum_campo_preenchido_chama_classificador_de_reinicio(self, monkeypatch):
+    def test_perfil_completo_chama_classificador_de_reinicio(self, monkeypatch):
         capturado = {}
 
         def fake_classificar(texto):
@@ -244,11 +267,12 @@ class TestReinicio:
             return "nenhum"
 
         monkeypatch.setattr(engine, "classificar_pedido_reinicio", fake_classificar)
-        monkeypatch.setattr(engine, "extrair_perfil", lambda texto, perfil_atual, historico=None: Perfil(**perfil_atual))
-        monkeypatch.setattr(engine, "_gerar_pergunta_coleta", lambda perfil: "Pergunta de coleta.")
+        monkeypatch.setattr(engine, "quer_nova_recomendacao", lambda texto: False)
+        monkeypatch.setattr(engine, "precisa_busca", lambda texto: False)
+        monkeypatch.setattr(engine, "_gerar_resposta_conversa", lambda texto: "oi")
 
-        sessao = _sessao(dict(_PERFIL_INCOMPLETO))
-        responder("user-1", "moro em Blumenau", sessao)
+        sessao = _sessao(dict(_PERFIL_COMPLETO), fase="completo")
+        responder("user-1", "quero começar de novo", sessao)
 
         assert capturado.get("chamado") is True
 
