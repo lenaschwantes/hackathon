@@ -1,4 +1,4 @@
-"""Golden dataset de avaliação do RAG para o IngressaEdu.
+"""Golden dataset de avaliação do RAG para o Decifra.
 
 Este teste NÃO é puro: ele chama a função de recuperação e geração real
 (retrieval.generate.answer) e, para recomendações, o motor estruturado real
