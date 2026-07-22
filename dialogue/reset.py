@@ -21,8 +21,8 @@ import re
 
 import anthropic
 
+from config.prompts import PROMPT_CLASSIFICA_REINICIO
 from config.settings import settings
-from dialogue.prompts import PROMPT_CLASSIFICA_REINICIO
 
 logger = logging.getLogger(__name__)
 

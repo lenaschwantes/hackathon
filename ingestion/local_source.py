@@ -3,6 +3,11 @@
 Substitui o storage remoto do projeto original: em vez de baixar os
 editais de um bucket, o Decifra lê os arquivos de uma pasta local
 (``data/editais`` por padrão).
+
+TODO: quando sair da PoC, trocar essa leitura de volume local por
+Object Storage (MinIO/S3) -- ``iter_documents`` é o ponto de troca;
+o resto do pipeline (`ingestion/pipeline.py`) já consome só
+``(nome, bytes)`` e não muda.
 """
 
 from __future__ import annotations

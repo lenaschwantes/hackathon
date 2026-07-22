@@ -83,7 +83,7 @@ docker compose up -d redis   # sessão de conversa fica no Redis
 uv run python run_bot.py
 ```
 
-`channels/engine.py` é o adaptador que liga o canal ao RAG de verdade(`retrieval/generate.py`); `channels/fake_engine.py` continua no repo sópara testar o canal sem depender do RAG. `channels/rate_limit.py` limita5 mensagens por usuário a cada 10s (contador no Redis) — protege aschamadas pagas à Anthropic/Voyage de flood.
+`channels/engine.py` é o adaptador que liga o canal ao RAG de verdade(`retrieval/generate.py`); `channels/fake_engine.py` continua no repo sópara testar o canal sem depender do RAG. `infra/rate_limit.py` limita5 mensagens por usuário a cada 10s (contador no Redis) — protege aschamadas pagas à Anthropic/Voyage de flood.
 
 ## Testes
 
@@ -109,7 +109,7 @@ O core de RAG vem de uma plataforma de produção. Os módulos de extração, li
 
 - **CI** (`.github/workflows/ci.yml`): roda a suíte de testes puros a cada push/PR.
 
-- **Rate limiting** (`channels/rate_limit.py`): protege as chamadas pagas à Anthropic/Voyage de flood por usuário.
+- **Rate limiting** (`infra/rate_limit.py`): protege as chamadas pagas à Anthropic/Voyage de flood por usuário.
 
 - **Ingestão automática** (`ingestion/sources/`, `run_auto_ingest.py`): acaba com a inserção manual de editais, com fonte HTML isolada do pipeline e fallback pra pasta local.
 

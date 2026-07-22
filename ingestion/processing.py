@@ -1,8 +1,17 @@
+"""Extração e limpeza de texto do pipeline de ingestão.
+
+Normaliza o upload pra DOCX (convertendo via LibreOffice quando
+necessário) e extrai o texto da estrutura; em seguida normaliza esse
+texto antes da persistência (ETL, sem chunking aqui).
+"""
+
 from __future__ import annotations
 
 import logging
 import os
+import re
 import tempfile
+import unicodedata
 from io import BytesIO
 from pathlib import Path
 
@@ -141,3 +150,28 @@ def _extract_from_pdf(content: bytes) -> tuple[str, dict]:
         "pages": len(reader.pages),
         "chars": len(text),
     }
+
+
+def clean_text(text: str) -> str:
+    """Normalize extracted text before persistence (ETL only, no chunking)."""
+    text = unicodedata.normalize("NFC", text or "")
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+
+    text = "".join(
+        c
+        for c in text
+        if c in ("\n", "\t") or not unicodedata.category(c).startswith("C")
+    )
+
+    lines: list[str] = []
+    for line in text.split("\n"):
+        line = re.sub(r"[ \t]+", " ", line).strip()
+        if not line:
+            if lines and lines[-1] != "":
+                lines.append("")
+            continue
+        lines.append(line)
+
+    cleaned = "\n".join(lines)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()

@@ -10,10 +10,9 @@ from __future__ import annotations
 import logging
 
 from config.settings import settings
-from ingestion.clean import clean_text
+from ingestion.chunking import chunk_text
 from ingestion.embeddings import VoyageEmbedding
-from ingestion.extract import extract_text
-from ingestion.simple_chunk import chunk_text
+from ingestion.processing import clean_text, extract_text
 from ingestion.weaviate_store import WeaviateStore
 from utils.hashing import sha256_bytes
 

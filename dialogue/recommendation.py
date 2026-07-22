@@ -15,11 +15,11 @@ from datetime import date
 import anthropic
 from pydantic import BaseModel
 
+from config.prompts import PROMPT_CLASSIFICA_PEDIDO_RECOMENDACAO, PROMPT_RECOMENDACAO
 from config.settings import settings
-from dialogue.geografia import cidade_em_sc
 from dialogue.profile import Perfil
-from dialogue.prompts import PROMPT_CLASSIFICA_PEDIDO_RECOMENDACAO, PROMPT_RECOMENDACAO
 from recommend.calendario import consultar_calendario
+from recommend.geografia import cidade_em_sc
 from recommend.opportunities import recomendar
 
 logger = logging.getLogger(__name__)

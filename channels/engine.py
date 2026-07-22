@@ -19,6 +19,7 @@ from dataclasses import dataclass
 
 import anthropic
 
+from config.prompts import PROMPT_COLETA, PROMPT_CONVERSA, PROMPT_CONFIRMACAO_REINICIO
 from config.settings import settings
 from dialogue.intent import precisa_busca
 from dialogue.onboarding import (
@@ -27,8 +28,7 @@ from dialogue.onboarding import (
     TEXTO_SINTETICO_BUSCAR_CURSO,
     TEXTO_SINTETICO_TENHO_DUVIDA,
 )
-from dialogue.profile import OPCOES_NIVEL, Perfil, determinar_fase, extrair_perfil
-from dialogue.prompts import PROMPT_COLETA, PROMPT_CONVERSA, PROMPT_CONFIRMACAO_REINICIO
+from dialogue.profile import OPCOES_NIVEL, Perfil, determinar_fase, extrair_perfil, niveis_compativeis
 from dialogue.recommendation import gerar_recomendacao, quer_nova_recomendacao
 from dialogue.reset import (
     CALLBACK_REINICIO_CANCELAR,
@@ -73,10 +73,22 @@ class Resposta(str):
         return obj
 
 
-_BOTOES_NIVEL: list[list[Botao]] = [
-    [Botao(rotulo, f"nivel:{i}") for i, (rotulo, _) in enumerate(OPCOES_NIVEL)][0:2],
-    [Botao(rotulo, f"nivel:{i}") for i, (rotulo, _) in enumerate(OPCOES_NIVEL)][2:4],
-]
+def _botoes_nivel(escolaridade: str | None) -> list[list[Botao]]:
+    """Botões de nível, restritos aos coerentes com a escolaridade já
+    coletada (`dialogue.profile.niveis_compativeis`) -- ex.: quem já fez
+    faculdade não vê mais "Técnico integrado" entre as opções.
+
+    `callback_data` usa o índice original em `OPCOES_NIVEL`, não a
+    posição na lista filtrada, pra `channels/telegram.py` continuar
+    resolvendo `OPCOES_NIVEL[i]` certo quando a pessoa toca um botão.
+    """
+    compativeis = niveis_compativeis(escolaridade)
+    botoes = [
+        Botao(rotulo, f"nivel:{i}")
+        for i, (rotulo, valor) in enumerate(OPCOES_NIVEL)
+        if valor in compativeis
+    ]
+    return [botoes[i : i + 2] for i in range(0, len(botoes), 2)]
 
 # Opção segura (nao-destrutiva) primeiro, e rotulos que restatam a
 # consequencia real -- nunca "Sim"/"Nao" vago -- seguindo a diretriz de
@@ -172,10 +184,16 @@ def _gerar_pergunta_coleta(perfil: Perfil) -> str:
     acolhedora, com base no que já se sabe e no que ainda falta.
     """
     client = anthropic.Anthropic()
+    faltantes = perfil.campos_faltantes()
     contexto = {
         "perfil_atual": perfil.model_dump(),
-        "campos_faltantes": perfil.campos_faltantes(),
+        "campos_faltantes": faltantes,
     }
+    if faltantes and faltantes[0] == "nivel":
+        compativeis = niveis_compativeis(perfil.escolaridade)
+        contexto["niveis_disponiveis"] = [
+            rotulo for rotulo, valor in OPCOES_NIVEL if valor in compativeis
+        ]
     resposta = client.messages.create(
         model=settings.anthropic_model_geracao,
         max_tokens=500,
@@ -254,7 +272,7 @@ def _com_botoes_de_nivel(pergunta: str, perfil: Perfil) -> str | Resposta:
     """
     faltantes = perfil.campos_faltantes()
     if faltantes and faltantes[0] == "nivel":
-        return Resposta(pergunta, botoes=_BOTOES_NIVEL)
+        return Resposta(pergunta, botoes=_botoes_nivel(perfil.escolaridade))
     return pergunta
 
 
@@ -438,6 +456,12 @@ def responder(
             _logar_falha("gerar recomendação", user_id, exc)
             return _MENSAGEM_FALLBACK
 
+    # Bifurcação motor estruturado (recommend/) vs RAG (retrieval/): daqui
+    # pra baixo é o ponto de roteamento semântico que um futuro Agente
+    # Supervisor multi-agente assumiria -- `quer_nova_recomendacao` decide
+    # se cai no motor estruturado (sem LLM decidindo prazo/data, só
+    # redigindo o resultado pronto), senão `precisa_busca` decide entre
+    # RAG (`_responder_via_rag`) e conversa livre.
     if quer_nova_recomendacao(texto):
         try:
             historico = sessao.get("historico") or []

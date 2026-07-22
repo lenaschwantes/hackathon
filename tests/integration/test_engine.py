@@ -394,7 +394,7 @@ class TestBotoesDeNivel:
         resposta = responder("user-1", "quero tecnologia", sessao)
 
         assert resposta == "Qual nível você quer?"
-        assert resposta.botoes == engine._BOTOES_NIVEL
+        assert resposta.botoes == engine._botoes_nivel(_PERFIL_SO_FALTA_NIVEL["escolaridade"])
 
     def test_pergunta_de_outro_campo_nao_vem_com_botoes(self, monkeypatch):
         monkeypatch.setattr(engine, "_gerar_pergunta_coleta", lambda perfil: "Qual sua escolaridade?")

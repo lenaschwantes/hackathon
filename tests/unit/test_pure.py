@@ -8,7 +8,7 @@ tu roda a cada commit para garantir que a base não quebrou.
 
 import pytest
 
-from ingestion.clean import clean_text
+from ingestion.processing import clean_text
 from utils.hashing import sha256_bytes
 from utils.validation import assert_allowed_filename, assert_has_extractable_text
 

@@ -27,7 +27,7 @@ import pytest
 from dotenv import load_dotenv
 
 from channels import engine
-from channels import rate_limit
+from infra import rate_limit
 from channels import session as session_module
 from channels.engine import _MENSAGEM_FALLBACK, responder
 from channels.telegram import TelegramAdapter
@@ -60,8 +60,11 @@ class _FakeRedis:
     async def get(self, chave):
         return self._store.get(chave)
 
-    async def set(self, chave, valor, ex=None):
+    async def set(self, chave, valor, ex=None, nx=False):
+        if nx and chave in self._store:
+            return None
         self._store[chave] = valor
+        return True
 
     async def incr(self, chave):
         self._contadores[chave] = self._contadores.get(chave, 0) + 1

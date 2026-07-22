@@ -8,7 +8,7 @@ import asyncio
 
 import pytest
 
-from channels import rate_limit
+from infra import rate_limit
 
 
 class FakeRedis:

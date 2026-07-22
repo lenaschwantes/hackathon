@@ -21,7 +21,6 @@ from telegram.ext import (
 from channels.base import ChannelAdapter
 from channels.engine import _BOTOES_INICIO, _MAX_CARACTERES_MENSAGEM, _MENSAGEM_MENU_INICIAL, Botao
 from channels.engine import responder as fake_responder
-from channels.rate_limit import MENSAGEM_LIMITE_EXCEDIDO, eh_duplicada, permitido
 from channels.session import carregar_sessao, salvar_sessao
 from dialogue.onboarding import (
     CALLBACK_INICIO_BUSCAR,
@@ -36,6 +35,7 @@ from dialogue.reset import (
     TEXTO_SINTETICO_CANCELAR,
     TEXTO_SINTETICO_CONFIRMAR,
 )
+from infra.rate_limit import MENSAGEM_LIMITE_EXCEDIDO, eh_duplicada, permitido
 
 logger = logging.getLogger(__name__)
 

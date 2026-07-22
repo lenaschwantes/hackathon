@@ -16,8 +16,8 @@ from typing import Optional
 import anthropic
 from pydantic import BaseModel, Field, ValidationError
 
+from config.prompts import PROMPT_EXTRACAO
 from config.settings import settings
-from dialogue.prompts import PROMPT_EXTRACAO
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +46,37 @@ OPCOES_NIVEL: tuple[tuple[str, str], ...] = (
     ("Graduação", "superior"),
     ("FIC (curso rápido)", "FIC"),
 )
+
+_TODOS_OS_NIVEIS: tuple[str, ...] = tuple(valor for _, valor in OPCOES_NIVEL)
+
+# Níveis coerentes com cada escolaridade já concluída -- evita oferecer
+# "tecnico integrado" (pensado pra quem ainda vai cursar o ensino medio,
+# junto com ele) pra quem ja tem superior, ou "superior" pra quem so tem
+# o fundamental. FIC (curso rapido de qualificacao) nao exige etapa
+# anterior especifica, entao continua compativel com todas.
+_NIVEIS_POR_ESCOLARIDADE: dict[str, tuple[str, ...]] = {
+    "ensino fundamental": ("tecnico integrado", "FIC"),
+    "ensino medio": ("tecnico subsequente", "superior", "FIC"),
+    "ensino medio completo": ("tecnico subsequente", "superior", "FIC"),
+    "ensino medio tecnico": ("tecnico subsequente", "superior", "FIC"),
+    "superior": ("FIC",),
+    "superior completo": ("FIC",),
+}
+
+
+def niveis_compativeis(escolaridade: str | None) -> tuple[str, ...]:
+    """Níveis de curso coerentes com a escolaridade já concluída.
+
+    Sem escolaridade (ainda) coletada, ou com um valor fora do
+    vocabulário fechado que `PROMPT_EXTRACAO` garante, nada é
+    restringido -- devolve todos os níveis, na ordem de `OPCOES_NIVEL`.
+    Compara normalizado (`_normaliza`) como rede de segurança contra
+    variação de acento/caixa ou um "completo" a mais que o LLM devolva
+    por conta própria, apesar do vocabulário fechado pedido no prompt.
+    """
+    if not escolaridade:
+        return _TODOS_OS_NIVEIS
+    return _NIVEIS_POR_ESCOLARIDADE.get(_normaliza(escolaridade), _TODOS_OS_NIVEIS)
 
 # Máximo de turnos recentes passados como contexto pra extração --
 # só o suficiente pra resolver uma referência à mensagem anterior, sem
@@ -195,6 +226,19 @@ def extrair_perfil(texto: str, perfil_atual: dict, historico: list[dict] | None 
         anterior = _ultima_mensagem_do_usuario(historico)
         if anterior is not None and _eh_resposta_nao_sei(anterior):
             mesclado["interesse"] = _INTERESSE_SEM_PREFERENCIA
+
+    # Coerencia escolaridade -> nivel: quando a escolaridade ja recem
+    # informada deixa um unico nivel plausivel (ex: "superior" so
+    # combina com "FIC"), preenche direto em vez de perguntar de novo
+    # um campo que ja esta implicito -- evita oferecer "tecnico
+    # integrado" pra quem ja fez faculdade, por exemplo. Com mais de
+    # uma opcao compativel, deixa "nivel" faltante mesmo: quem pergunta
+    # (`_gerar_pergunta_coleta`/`_com_botoes_de_nivel`) restringe as
+    # opcoes mostradas via `niveis_compativeis`, sem perguntar a toa.
+    if not mesclado.get("nivel") and mesclado.get("escolaridade"):
+        compativeis = niveis_compativeis(mesclado["escolaridade"])
+        if len(compativeis) == 1:
+            mesclado["nivel"] = compativeis[0]
 
     try:
         return Perfil(**mesclado)

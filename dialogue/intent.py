@@ -25,8 +25,8 @@ import unicodedata
 import anthropic
 from pydantic import BaseModel
 
+from config.prompts import PROMPT_CLASSIFICA_INTENCAO_BUSCA
 from config.settings import settings
-from dialogue.prompts import PROMPT_CLASSIFICA_INTENCAO_BUSCA
 
 logger = logging.getLogger(__name__)
 
