@@ -20,3 +20,6 @@ TEXTO_SINTETICO_GUIA_CURSOS = "quero o guia de cursos"
 TEXTO_SINTETICO_DUVIDA_PRAZOS = "duvidas sobre prazos e formas de ingresso"
 TEXTO_SINTETICO_VER_OUTRO_EDITAL = "ver outro edital"
 TEXTO_SINTETICO_ENCERRAR_DUVIDA = "encerrar duvida"
+
+CALLBACK_DUVIDA_PERGUNTA_LIVRE = "duvida:pergunta_livre"
+TEXTO_SINTETICO_PERGUNTA_LIVRE = "quero fazer uma pergunta livre"

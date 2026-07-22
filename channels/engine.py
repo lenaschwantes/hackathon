@@ -28,12 +28,14 @@ from dialogue.onboarding import (
     CALLBACK_INICIO_DUVIDA,
     CALLBACK_DUVIDA_GUIA_CURSOS,
     CALLBACK_DUVIDA_PRAZOS,
+    CALLBACK_DUVIDA_PERGUNTA_LIVRE,
     CALLBACK_EDITAL_VER_OUTRO,
     CALLBACK_EDITAL_ENCERRAR,
     TEXTO_SINTETICO_BUSCAR_CURSO,
     TEXTO_SINTETICO_TENHO_DUVIDA,
     TEXTO_SINTETICO_GUIA_CURSOS,
     TEXTO_SINTETICO_DUVIDA_PRAZOS,
+    TEXTO_SINTETICO_PERGUNTA_LIVRE,
     TEXTO_SINTETICO_VER_OUTRO_EDITAL,
     TEXTO_SINTETICO_ENCERRAR_DUVIDA,
 )
@@ -141,7 +143,13 @@ _MENSAGEM_MENU_INICIAL = (
 
 _MENSAGEM_MENU_DUVIDA = "Sobre o que você quer saber?"
 
+_MENSAGEM_CONVITE_DUVIDA = (
+    "Pode perguntar! Sobre prazo, documento, requisito, o que for -- é só "
+    "mandar. E se quiser uma recomendação de curso mais pra frente, também é só pedir."
+)
+
 _BOTOES_DUVIDA: list[list[Botao]] = [
+    [Botao("Fazer uma pergunta", CALLBACK_DUVIDA_PERGUNTA_LIVRE)],
     [Botao("Guia de cursos", CALLBACK_DUVIDA_GUIA_CURSOS)],
     [Botao("Dúvidas sobre prazos e formas de ingresso", CALLBACK_DUVIDA_PRAZOS)],
 ]
@@ -488,6 +496,9 @@ def responder(
         # Sub-menu "Tenho uma dúvida": guia de cursos responde direto
         # (sem sub-menu); prazos mostra a lista de editais abertos.
         if sessao.get("fase_dialogo") == "menu_duvida":
+            if texto == TEXTO_SINTETICO_PERGUNTA_LIVRE:
+                sessao["fase_dialogo"] = "conversa_livre"
+                return _MENSAGEM_CONVITE_DUVIDA
             if texto == TEXTO_SINTETICO_GUIA_CURSOS:
                 sessao["fase_dialogo"] = "conversa_livre"
                 return _MENSAGEM_GUIA_CURSOS

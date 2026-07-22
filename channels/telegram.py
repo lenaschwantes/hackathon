@@ -28,12 +28,14 @@ from dialogue.onboarding import (
     CALLBACK_INICIO_DUVIDA,
     CALLBACK_DUVIDA_GUIA_CURSOS,
     CALLBACK_DUVIDA_PRAZOS,
+    CALLBACK_DUVIDA_PERGUNTA_LIVRE,
     CALLBACK_EDITAL_VER_OUTRO,
     CALLBACK_EDITAL_ENCERRAR,
     TEXTO_SINTETICO_BUSCAR_CURSO,
     TEXTO_SINTETICO_TENHO_DUVIDA,
     TEXTO_SINTETICO_GUIA_CURSOS,
     TEXTO_SINTETICO_DUVIDA_PRAZOS,
+    TEXTO_SINTETICO_PERGUNTA_LIVRE,
     TEXTO_SINTETICO_VER_OUTRO_EDITAL,
     TEXTO_SINTETICO_ENCERRAR_DUVIDA,
 )
@@ -223,10 +225,13 @@ class TelegramAdapter(ChannelAdapter):
                 TEXTO_SINTETICO_BUSCAR_CURSO if data == CALLBACK_INICIO_BUSCAR else TEXTO_SINTETICO_TENHO_DUVIDA
             )
             resposta = self._responder(user_id, texto_usuario, sessao)
-        elif data in (CALLBACK_DUVIDA_GUIA_CURSOS, CALLBACK_DUVIDA_PRAZOS):
-            texto_usuario = (
-                TEXTO_SINTETICO_GUIA_CURSOS if data == CALLBACK_DUVIDA_GUIA_CURSOS else TEXTO_SINTETICO_DUVIDA_PRAZOS
-            )
+        elif data in (CALLBACK_DUVIDA_GUIA_CURSOS, CALLBACK_DUVIDA_PRAZOS, CALLBACK_DUVIDA_PERGUNTA_LIVRE):
+            mapa_texto = {
+                CALLBACK_DUVIDA_GUIA_CURSOS: TEXTO_SINTETICO_GUIA_CURSOS,
+                CALLBACK_DUVIDA_PRAZOS: TEXTO_SINTETICO_DUVIDA_PRAZOS,
+                CALLBACK_DUVIDA_PERGUNTA_LIVRE: TEXTO_SINTETICO_PERGUNTA_LIVRE,
+            }
+            texto_usuario = mapa_texto[data]
             resposta = self._responder(user_id, texto_usuario, sessao)
         elif data in (CALLBACK_EDITAL_VER_OUTRO, CALLBACK_EDITAL_ENCERRAR):
             texto_usuario = (
