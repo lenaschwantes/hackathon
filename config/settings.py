@@ -47,6 +47,17 @@ class Settings(BaseSettings):
     search_k: int = 12
     search_alpha: float = 0.6
 
+    # Cache semântico do RAG (evita busca + geração pra perguntas
+    # repetidas ou parafraseadas -- ver infra/semantic_cache.py)
+    rag_cache_habilitado: bool = True
+    rag_cache_limiar_similaridade: float = 0.90
+    rag_cache_ttl_segundos: int = 60 * 60 * 3  # 3h
+    # Recusa ("não encontrei essa informação") tem TTL bem mais curto --
+    # o crawler roda periodicamente, então uma recusa de ontem pode não
+    # valer mais hoje se um edital novo entrou na base.
+    rag_cache_ttl_recusa_segundos: int = 60 * 30  # 30min
+    rag_cache_max_itens: int = 80
+
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )

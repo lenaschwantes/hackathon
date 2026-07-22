@@ -117,6 +117,12 @@ def _executa_caso(caso: dict, monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr(generate_module, "hybrid_search", _fake_hybrid_search)
     monkeypatch.setattr(generate_module.anthropic, "Anthropic", _FakeAnthropicClient)
+    # Cache semântico desligado aqui: sem isso, cada caso bateria de
+    # verdade no Redis/Voyage -- este teste é sobre o fluxo de geração,
+    # não sobre o cache (que tem sua própria suíte em
+    # tests/unit/test_semantic_cache.py).
+    monkeypatch.setattr(generate_module.semantic_cache, "buscar", lambda pergunta: None)
+    monkeypatch.setattr(generate_module.semantic_cache, "salvar", lambda *a, **kw: None)
     return answer(caso["pergunta"])
 
 

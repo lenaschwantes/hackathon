@@ -14,6 +14,7 @@ import anthropic
 from pydantic import BaseModel
 
 from config.settings import settings
+from infra import semantic_cache
 from retrieval.search import hybrid_search
 
 SYSTEM = (
@@ -113,10 +114,21 @@ def answer(question: str, k: int | None = None) -> dict:
     dict
         ``answer`` (texto), ``sources`` (lista de editais citados) e
         ``recusa`` (bool -- se o próprio modelo se declarou em recusa).
+
+    Antes de buscar, checa o cache semântico (`infra.semantic_cache`):
+    pergunta equivalente a uma recente já respondida devolve direto,
+    sem busca nem geração. Ao final, grava a resposta no cache -- sem
+    infra de cache disponível, `buscar`/`salvar` são no-ops seguros.
     """
+    cacheado = semantic_cache.buscar(question)
+    if cacheado is not None:
+        return cacheado
+
     hits = hybrid_search(question, k=k)
     if not hits:
-        return {"answer": _SEM_BASE, "sources": [], "recusa": True}
+        resultado = {"answer": _SEM_BASE, "sources": [], "recusa": True}
+        semantic_cache.salvar(question, resultado["answer"], resultado["sources"], resultado["recusa"])
+        return resultado
 
     contexto = "\n\n".join(
         f"[Fonte: {h['file_name']}]\n{h['text']}" for h in hits
@@ -148,4 +160,5 @@ def answer(question: str, k: int | None = None) -> dict:
 
     parsed = resposta.parsed_output
     sources = _fontes_relevantes(hits, parsed.recusa)
+    semantic_cache.salvar(question, parsed.resposta, sources, parsed.recusa)
     return {"answer": parsed.resposta, "sources": sources, "recusa": parsed.recusa}
