@@ -272,7 +272,11 @@ class TestReinicio:
         monkeypatch.setattr(engine, "_gerar_resposta_conversa", lambda texto: "oi")
 
         sessao = _sessao(dict(_PERFIL_COMPLETO), fase="completo")
-        responder("user-1", "quero começar de novo", sessao)
+        # Frase que não bate no gatilho rápido de reinício total
+        # (`eh_gatilho_explicito_de_reinicio_total`, checado antes disso
+        # e que nunca chama LLM) -- só assim o classificador de verdade
+        # chega a ser exercitado por este teste.
+        responder("user-1", "quero ver outra area", sessao)
 
         assert capturado.get("chamado") is True
 
@@ -376,6 +380,126 @@ class TestReinicio:
         assert sessao["fase_dialogo"] == "completo"
 
 
+class TestGatilhoGlobalDeReinicio:
+    """
+    'recomeçar' (e variações fortes) precisa interromper QUALQUER fase
+    da conversa e pedir confirmação -- não só o cenário de perfil
+    completo que `classificar_pedido_reinicio` já cobre. Camada rápida
+    (`dialogue.reset.eh_gatilho_explicito_de_reinicio_total`), sem LLM,
+    então nenhum destes testes precisa mockar chamada de rede pra isso.
+    """
+
+    def test_durante_a_coleta_de_perfil_interrompe_e_pede_confirmacao(self, monkeypatch):
+        def _extrair_perfil_nao_deveria_ser_chamado(texto, perfil_atual, historico=None):
+            raise AssertionError("não deveria tentar extrair perfil -- reinício tem prioridade")
+
+        monkeypatch.setattr(engine, "extrair_perfil", _extrair_perfil_nao_deveria_ser_chamado)
+        monkeypatch.setattr(engine, "_gerar_confirmacao_reinicio", lambda texto: "Confirma que quer começar de novo?")
+
+        # No meio de responder especificamente ao campo "interesse" --
+        # mesmo assim, "recomeçar" precisa vencer o roteamento normal.
+        sessao = _sessao(dict(_PERFIL_INCOMPLETO))
+        resposta = responder("user-1", "quero recomeçar", sessao)
+
+        assert resposta == "Confirma que quer começar de novo?"
+        assert sessao["fase_dialogo"] == "confirmando_reinicio"
+        assert sessao["fase_dialogo_anterior"] == "coletando"
+
+    def test_durante_pergunta_ao_rag_interrompe_e_pede_confirmacao(self, monkeypatch):
+        def _responder_via_rag_nao_deveria_ser_chamado(user_id, texto):
+            raise AssertionError("não deveria chamar o RAG -- reinício tem prioridade")
+
+        monkeypatch.setattr(engine, "_responder_via_rag", _responder_via_rag_nao_deveria_ser_chamado)
+        monkeypatch.setattr(engine, "_gerar_confirmacao_reinicio", lambda texto: "Confirma que quer começar de novo?")
+
+        sessao = _sessao({}, fase="conversa_livre")
+        resposta = responder("user-1", "na verdade quero recomeçar", sessao)
+
+        assert resposta == "Confirma que quer começar de novo?"
+        assert sessao["fase_dialogo"] == "confirmando_reinicio"
+        assert sessao["fase_dialogo_anterior"] == "conversa_livre"
+
+    def test_confirmacao_limpa_perfil_fase_e_historico(self, monkeypatch):
+        monkeypatch.setattr(engine, "_gerar_confirmacao_reinicio", lambda texto: "Confirma?")
+
+        sessao = _sessao(dict(_PERFIL_COMPLETO), fase="conversa_livre")
+        sessao["historico"] = [{"de": "usuario", "texto": "pergunta antiga"}]
+        responder("user-1", "recomeçar", sessao)
+        assert sessao["fase_dialogo"] == "confirmando_reinicio"
+
+        resposta = responder("user-1", "sim", sessao)
+
+        assert "apaguei tudo" in resposta.lower()
+        assert sessao["fase_dialogo"] == "coletando"
+        assert sessao["historico"] == []
+        assert all(valor is None for valor in sessao["perfil"].values())
+
+    @pytest.mark.parametrize(
+        "texto",
+        [
+            "recomeçar",
+            "/recomecar",
+            "quero começar de novo",
+            "esquece tudo",
+            "reinicia",
+            "vamos reiniciar do zero",
+        ],
+    )
+    def test_variacoes_de_linguagem_natural_sao_reconhecidas(self, monkeypatch, texto):
+        monkeypatch.setattr(engine, "_gerar_confirmacao_reinicio", lambda texto: "Confirma?")
+
+        sessao = _sessao(dict(_PERFIL_INCOMPLETO))
+        resposta = responder("user-1", texto, sessao)
+
+        assert sessao["fase_dialogo"] == "confirmando_reinicio", (
+            f"{texto!r} deveria ter disparado o gatilho de reinício"
+        )
+        assert resposta == "Confirma?"
+
+    def test_nao_interrompe_confirmacao_ja_em_andamento(self, monkeypatch):
+        # Já em "confirmando_reinicio": um "recomeçar" repetido não deve
+        # reabrir o gatilho -- cai no bloco normal de confirmar/negar
+        # (aqui, como não bate em `eh_confirmacao_positiva`, é tratado
+        # como negativa -- comportamento inalterado por este recurso).
+        sessao = _sessao(dict(_PERFIL_COMPLETO), fase="confirmando_reinicio")
+        sessao["fase_dialogo_anterior"] = "completo"
+
+        resposta = responder("user-1", "recomeçar", sessao)
+
+        assert resposta == "Sem problema, mantive seus dados como estavam."
+        assert sessao["fase_dialogo"] == "completo"
+
+    def test_botao_obsoleto_apos_reinicio_nao_forca_campo_da_coleta_anterior(self, monkeypatch):
+        """
+        Regressão do caso de segurança pedido: pessoa via um teclado de
+        escolaridade, mas em vez de tocar, reiniciou a conversa. A fase
+        volta a "coletando" (agora pedindo cidade, do zero) -- um toque
+        atrasado no botão antigo de escolaridade não pode "vazar" pra
+        esse novo ciclo só porque a fase ainda se chama "coletando".
+        """
+        chamadas_ao_extrator = []
+
+        def _extrair_perfil_fake(texto, perfil_atual, historico=None):
+            chamadas_ao_extrator.append(texto)
+            return Perfil(**perfil_atual)  # simula: não extraiu nada útil de "Já fiz uma faculdade" fora de contexto
+
+        monkeypatch.setattr(engine, "extrair_perfil", _extrair_perfil_fake)
+        monkeypatch.setattr(engine, "_gerar_pergunta_coleta", lambda perfil: "Em qual cidade você mora?")
+
+        sessao = _sessao(engine.perfil_zerado())  # como fica logo após confirmar o reinício
+        resposta = responder(
+            "user-1", "Já fiz uma faculdade", sessao, escolaridade_escolhida="superior"
+        )
+
+        # O botão obsoleto não forçou escolaridade -- caiu no fallback
+        # (extrator chamado com o rótulo como texto livre, igual ao
+        # caso já coberto de fase mudada), e a coleta segue pedindo
+        # cidade, do zero.
+        assert chamadas_ao_extrator == ["Já fiz uma faculdade"]
+        assert sessao["perfil"]["escolaridade"] is None
+        assert resposta == "Em qual cidade você mora?"
+
+
 _PERFIL_SO_FALTA_NIVEL = {
     "cidade": "Blumenau",
     "escolaridade": "ensino medio completo",
@@ -386,7 +510,7 @@ _PERFIL_SO_FALTA_NIVEL = {
 }
 
 
-class TestBotoesDeNivel:
+class TestBotoesDeCampoFechado:
     def test_pergunta_de_nivel_vem_com_botoes_quando_e_o_proximo_campo(self, monkeypatch):
         monkeypatch.setattr(engine, "_gerar_pergunta_coleta", lambda perfil: "Qual nível você quer?")
 
@@ -396,14 +520,27 @@ class TestBotoesDeNivel:
         assert resposta == "Qual nível você quer?"
         assert resposta.botoes == engine._botoes_nivel(_PERFIL_SO_FALTA_NIVEL["escolaridade"])
 
-    def test_pergunta_de_outro_campo_nao_vem_com_botoes(self, monkeypatch):
+    def test_pergunta_de_escolaridade_vem_com_botoes_quando_e_o_proximo_campo(self, monkeypatch):
         monkeypatch.setattr(engine, "_gerar_pergunta_coleta", lambda perfil: "Qual sua escolaridade?")
 
-        perfil_faltando_escolaridade = {**_PERFIL_SO_FALTA_NIVEL, "escolaridade": None, "alcance": None}
+        perfil_faltando_escolaridade = {**_PERFIL_SO_FALTA_NIVEL, "escolaridade": None}
         sessao = _sessao(perfil_faltando_escolaridade)
         resposta = responder("user-1", "moro em Blumenau", sessao)
 
         assert resposta == "Qual sua escolaridade?"
+        assert resposta.botoes == engine._BOTOES_ESCOLARIDADE
+
+    def test_pergunta_de_campo_aberto_nao_vem_com_botoes(self, monkeypatch):
+        monkeypatch.setattr(engine, "_gerar_pergunta_coleta", lambda perfil: "Qual área te interessa?")
+
+        # "interesse" é campo de texto livre por design -- não deve
+        # ganhar teclado nenhum, ao contrário de "escolaridade"/
+        # "alcance"/"nivel".
+        perfil_faltando_interesse = {**_PERFIL_SO_FALTA_NIVEL, "interesse": None, "alcance": None}
+        sessao = _sessao(perfil_faltando_interesse)
+        resposta = responder("user-1", "moro em Blumenau", sessao)
+
+        assert resposta == "Qual área te interessa?"
         assert getattr(resposta, "botoes", None) is None
 
     def test_nivel_escolhido_ignora_extrator_e_define_nivel_direto(self, monkeypatch):

@@ -28,7 +28,7 @@ from dialogue.onboarding import (
     TEXTO_SINTETICO_BUSCAR_CURSO,
     TEXTO_SINTETICO_TENHO_DUVIDA,
 )
-from dialogue.profile import OPCOES_NIVEL
+from dialogue.profile import OPCOES_ALCANCE, OPCOES_ESCOLARIDADE, OPCOES_NIVEL
 from dialogue.reset import (
     CALLBACK_REINICIO_CANCELAR,
     CALLBACK_REINICIO_CONFIRMAR,
@@ -61,6 +61,7 @@ class TelegramAdapter(ChannelAdapter):
         self._responder = responder or fake_responder
         self._app = Application.builder().token(token).build()
         self._app.add_handler(CommandHandler("start", self._ao_receber_start))
+        self._app.add_handler(CommandHandler("recomecar", self._ao_receber_comando_recomecar))
         self._app.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self._ao_receber)
         )
@@ -91,16 +92,14 @@ class TelegramAdapter(ChannelAdapter):
 
         await update.message.reply_text(_MENSAGEM_MENU_INICIAL, reply_markup=_montar_teclado(_BOTOES_INICIO))
 
-    async def _ao_receber(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def _processar_mensagem_de_texto(self, user_id: str, texto: str, update: Update) -> None:
         """
-        Chamado a cada mensagem de texto recebida. Faz o ciclo
-        completo: checa rate limit -> carrega sessão -> chama o motor
-        -> salva sessão -> responde. Nenhuma lógica de negócio mora
-        aqui, só a orquestração entre sessão e motor.
+        Corpo comum entre uma mensagem de texto normal e o comando
+        `/recomecar` (que só fixa o texto e reaproveita o resto do
+        ciclo): checa dedup/rate limit -> carrega sessão -> chama o
+        motor -> salva sessão -> responde. Nenhuma lógica de negócio
+        mora aqui, só a orquestração entre sessão e motor.
         """
-        user_id = str(update.effective_user.id)
-        texto = update.message.text[:_MAX_CARACTERES_MENSAGEM]
-
         if await eh_duplicada(user_id, texto):
             await update.message.reply_text(
                 "Já tô cuidando disso pra você! Me dá um instante."
@@ -121,6 +120,23 @@ class TelegramAdapter(ChannelAdapter):
         botoes = getattr(resposta, "botoes", None)
         await update.message.reply_text(str(resposta), reply_markup=_montar_teclado(botoes))
 
+    async def _ao_receber(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Chamado a cada mensagem de texto recebida."""
+        user_id = str(update.effective_user.id)
+        texto = update.message.text[:_MAX_CARACTERES_MENSAGEM]
+        await self._processar_mensagem_de_texto(user_id, texto, update)
+
+    async def _ao_receber_comando_recomecar(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """
+        `/recomecar` -- mesmo gatilho de "recomeçar" digitado (ver
+        `dialogue.reset.eh_gatilho_explicito_de_reinicio_total`), só
+        que via comando explícito do Telegram (que o `MessageHandler`
+        normal nunca vê, `filters.TEXT & ~filters.COMMAND` exclui
+        comandos de propósito) em vez de mensagem de texto solta.
+        """
+        user_id = str(update.effective_user.id)
+        await self._processar_mensagem_de_texto(user_id, "recomeçar", update)
+
     async def _ao_receber_botao(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """
         Chamado a cada toque num botão inline (seleção de nível ou
@@ -134,6 +150,18 @@ class TelegramAdapter(ChannelAdapter):
 
         user_id = str(query.from_user.id)
         data = query.data
+
+        # Mesma proteção de dedup do canal de texto (`_ao_receber`) --
+        # sem isso, um duplo toque rápido no mesmo botão (ex.: rede
+        # lenta, a pessoa toca de novo achando que não registrou)
+        # processa a escolha duas vezes. Chave pelo `callback_data`
+        # (ex.: "nivel:2"), não pelo rótulo -- é o identificador real
+        # do que foi clicado.
+        if data is not None and await eh_duplicada(user_id, data):
+            await context.bot.send_message(
+                chat_id=query.message.chat_id, text="Já tô cuidando disso pra você! Me dá um instante."
+            )
+            return
 
         if not await permitido(user_id):
             await context.bot.send_message(chat_id=query.message.chat_id, text=MENSAGEM_LIMITE_EXCEDIDO)
@@ -152,6 +180,28 @@ class TelegramAdapter(ChannelAdapter):
                 # apareceu (ex.: a pessoa reiniciou nesse meio tempo).
                 # Não força mais um nível numa fase a que ele não
                 # pertence -- cai no fluxo normal com o texto do botão.
+                texto_usuario = rotulo
+                resposta = self._responder(user_id, rotulo, sessao)
+        elif data is not None and data.startswith("escolaridade:"):
+            indice = int(data.split(":", 1)[1])
+            rotulo, valor = OPCOES_ESCOLARIDADE[indice]
+            if sessao.get("fase_dialogo") == "coletando":
+                texto_usuario = rotulo
+                resposta = self._responder(user_id, rotulo, sessao, escolaridade_escolhida=valor)
+            else:
+                # Mesmo caso do botão de nível obsoleto acima: sessão
+                # mudou de fase desde que o botão apareceu -- cai no
+                # fluxo normal com o texto do botão.
+                texto_usuario = rotulo
+                resposta = self._responder(user_id, rotulo, sessao)
+        elif data is not None and data.startswith("alcance:"):
+            indice = int(data.split(":", 1)[1])
+            rotulo, valor = OPCOES_ALCANCE[indice]
+            if sessao.get("fase_dialogo") == "coletando":
+                texto_usuario = rotulo
+                resposta = self._responder(user_id, rotulo, sessao, alcance_escolhido=valor)
+            else:
+                # Mesmo caso dos botões obsoletos acima.
                 texto_usuario = rotulo
                 resposta = self._responder(user_id, rotulo, sessao)
         elif data in (CALLBACK_REINICIO_CONFIRMAR, CALLBACK_REINICIO_CANCELAR):

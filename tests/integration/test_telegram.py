@@ -28,8 +28,11 @@ class _FakeRedis:
     async def get(self, chave):
         return self._store.get(chave)
 
-    async def set(self, chave, valor, ex=None):
+    async def set(self, chave, valor, ex=None, nx=False):
+        if nx and chave in self._store:
+            return None
         self._store[chave] = valor
+        return True
 
     async def incr(self, chave):
         self._contadores[chave] = self._contadores.get(chave, 0) + 1
@@ -142,6 +145,216 @@ class TestBotaoDeNivel:
         asyncio.run(cenario())
 
         assert capturado["nivel_escolhido"] is None
+
+
+class TestTodosOsBotoesDeNivelExtraemValorCorreto:
+    """Regressão do bug reportado ('Graduação' oferecendo nível de
+    ensino médio depois): confirma, pra CADA botão do teclado de
+    nível -- não só 'Graduação' -- que o índice do callback_data
+    resolve pro par rótulo/valor certo em `OPCOES_NIVEL`, sem
+    dessincronia entre a lista usada pro rótulo e a usada pro valor."""
+
+    @pytest.mark.parametrize(
+        "indice,rotulo_esperado,valor_esperado",
+        [
+            (0, "Técnico integrado", "tecnico integrado"),
+            (1, "Técnico subsequente", "tecnico subsequente"),
+            (2, "Graduação", "superior"),
+            (3, "FIC (curso rápido)", "FIC"),
+        ],
+    )
+    def test_cada_botao_de_nivel_extrai_o_par_certo(
+        self, fake_redis, monkeypatch, indice, rotulo_esperado, valor_esperado
+    ):
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "dummy:token-para-teste")
+        capturado = {}
+
+        def fake_responder(user_id, texto, sessao, nivel_escolhido=None, escolaridade_escolhida=None):
+            capturado["texto"] = texto
+            capturado["nivel_escolhido"] = nivel_escolhido
+            return "ok"
+
+        adapter = TelegramAdapter(responder=fake_responder)
+
+        async def cenario():
+            await _salvar_sessao_inicial("60", _sessao(dict(_PERFIL_SO_FALTA_NIVEL)))
+            update = _fake_callback_update(user_id=60, data=f"nivel:{indice}")
+            await adapter._ao_receber_botao(update, _fake_context())
+
+        asyncio.run(cenario())
+
+        assert capturado["nivel_escolhido"] == valor_esperado
+        assert capturado["texto"] == rotulo_esperado
+
+
+class TestBotaoDeEscolaridade:
+    def test_botao_de_escolaridade_chama_responder_com_escolaridade_escolhida(self, fake_redis, monkeypatch):
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "dummy:token-para-teste")
+        capturado = {}
+
+        def fake_responder(user_id, texto, sessao, nivel_escolhido=None, escolaridade_escolhida=None):
+            capturado["texto"] = texto
+            capturado["escolaridade_escolhida"] = escolaridade_escolhida
+            return "Perfeito, já registrei!"
+
+        adapter = TelegramAdapter(responder=fake_responder)
+
+        async def cenario():
+            perfil_faltando_escolaridade = {**_PERFIL_SO_FALTA_NIVEL, "escolaridade": None, "nivel": None}
+            await _salvar_sessao_inicial("61", _sessao(perfil_faltando_escolaridade))
+            update = _fake_callback_update(user_id=61, data="escolaridade:3")
+            await adapter._ao_receber_botao(update, _fake_context())
+
+        asyncio.run(cenario())
+
+        assert capturado["escolaridade_escolhida"] == "superior"
+        assert capturado["texto"] == "Já fiz uma faculdade"
+
+    def test_botao_de_escolaridade_stale_nao_forca_escolaridade_quando_fase_mudou(self, fake_redis, monkeypatch):
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "dummy:token-para-teste")
+        capturado = {}
+
+        def fake_responder(user_id, texto, sessao, nivel_escolhido=None, escolaridade_escolhida=None):
+            capturado["escolaridade_escolhida"] = escolaridade_escolhida
+            return "ok"
+
+        adapter = TelegramAdapter(responder=fake_responder)
+
+        async def cenario():
+            await _salvar_sessao_inicial("62", _sessao(dict(_PERFIL_COMPLETO), fase="completo"))
+            update = _fake_callback_update(user_id=62, data="escolaridade:0")
+            await adapter._ao_receber_botao(update, _fake_context())
+
+        asyncio.run(cenario())
+
+        assert capturado["escolaridade_escolhida"] is None
+
+    @pytest.mark.parametrize(
+        "indice,rotulo_esperado,valor_esperado",
+        [
+            (0, "Ensino fundamental", "ensino fundamental"),
+            (1, "Ensino médio", "ensino medio"),
+            (2, "Ensino médio técnico", "ensino medio tecnico"),
+            (3, "Já fiz uma faculdade", "superior"),
+        ],
+    )
+    def test_cada_botao_de_escolaridade_extrai_o_par_certo(
+        self, fake_redis, monkeypatch, indice, rotulo_esperado, valor_esperado
+    ):
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "dummy:token-para-teste")
+        capturado = {}
+
+        def fake_responder(user_id, texto, sessao, nivel_escolhido=None, escolaridade_escolhida=None):
+            capturado["texto"] = texto
+            capturado["escolaridade_escolhida"] = escolaridade_escolhida
+            return "ok"
+
+        adapter = TelegramAdapter(responder=fake_responder)
+
+        async def cenario():
+            perfil = {**_PERFIL_SO_FALTA_NIVEL, "escolaridade": None, "nivel": None}
+            await _salvar_sessao_inicial("63", _sessao(perfil))
+            update = _fake_callback_update(user_id=63, data=f"escolaridade:{indice}")
+            await adapter._ao_receber_botao(update, _fake_context())
+
+        asyncio.run(cenario())
+
+        assert capturado["escolaridade_escolhida"] == valor_esperado
+        assert capturado["texto"] == rotulo_esperado
+
+
+class TestCliqueEmBotaoDeEscolaridadeEProduzNivelCoerente:
+    """Fim a fim (callback -> `channels.engine.responder` real, sem
+    mock) -- confirma que clicar 'Já fiz uma faculdade' nunca deixa a
+    pessoa numa situação em que o próximo teclado de nível ofereça algo
+    incoerente (ex.: 'Técnico integrado', pensado pra quem ainda vai
+    cursar o ensino médio)."""
+
+    def test_apos_clicar_ja_fiz_uma_faculdade_nivel_e_fic_e_niveis_incoerentes_nunca_aparecem(
+        self, fake_redis, monkeypatch
+    ):
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "dummy:token-para-teste")
+        # Usa o `responder()` real (coerência de verdade), só troca a
+        # chamada paga (LLM) por um stub -- "interesse" segue faltando
+        # de propósito, pra continuar em coleta e não escorregar pra
+        # `gerar_recomendacao` (que chamaria Anthropic de verdade).
+        monkeypatch.setattr(engine, "_gerar_pergunta_coleta", lambda perfil: "Qual área te interessa?")
+        adapter = TelegramAdapter(responder=engine.responder)
+
+        async def cenario():
+            perfil = {
+                "cidade": "Blumenau",
+                "escolaridade": None,
+                "interesse": None,
+                "nivel": None,
+                "modalidade": None,
+                "alcance": "regional",
+            }
+            await _salvar_sessao_inicial("64", _sessao(perfil))
+            update = _fake_callback_update(user_id=64, data="escolaridade:3")  # "Já fiz uma faculdade"
+            await adapter._ao_receber_botao(update, _fake_context())
+
+            from channels.session import carregar_sessao
+
+            return await carregar_sessao("64")
+
+        sessao_final = asyncio.run(cenario())
+
+        assert sessao_final["perfil"]["escolaridade"] == "superior"
+        assert sessao_final["perfil"]["nivel"] == "FIC", (
+            "escolaridade 'superior' só é compatível com FIC -- deveria ter "
+            "pulado a pergunta de nível e preenchido direto"
+        )
+
+        botoes_de_nivel_se_perguntasse = engine._botoes_nivel(sessao_final["perfil"]["escolaridade"])
+        rotulos_oferecidos = {b.rotulo for linha in botoes_de_nivel_se_perguntasse for b in linha}
+        assert "Técnico integrado" not in rotulos_oferecidos
+        assert "Técnico subsequente" not in rotulos_oferecidos
+
+
+class TestDedupDeCliqueDeBotao:
+    def test_clique_duplicado_no_mesmo_botao_e_ignorado(self, fake_redis, monkeypatch):
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "dummy:token-para-teste")
+        chamadas = []
+
+        def fake_responder(user_id, texto, sessao, nivel_escolhido=None, escolaridade_escolhida=None):
+            chamadas.append(nivel_escolhido)
+            return "ok"
+
+        adapter = TelegramAdapter(responder=fake_responder)
+
+        async def cenario():
+            await _salvar_sessao_inicial("65", _sessao(dict(_PERFIL_SO_FALTA_NIVEL)))
+            context = _fake_context()
+            # Duas mensagens de callback pro MESMO botão, simulando um
+            # duplo toque rápido (ex.: rede lenta) -- só a primeira
+            # deve de fato chamar o motor de resposta.
+            await adapter._ao_receber_botao(_fake_callback_update(user_id=65, data="nivel:2"), context)
+            await adapter._ao_receber_botao(_fake_callback_update(user_id=65, data="nivel:2"), context)
+
+        asyncio.run(cenario())
+
+        assert len(chamadas) == 1, f"esperava 1 chamada ao motor, teve {len(chamadas)}: {chamadas}"
+
+    def test_cliques_em_botoes_diferentes_nao_sao_tratados_como_duplicados(self, fake_redis, monkeypatch):
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "dummy:token-para-teste")
+        chamadas = []
+
+        def fake_responder(user_id, texto, sessao, nivel_escolhido=None, escolaridade_escolhida=None):
+            chamadas.append(nivel_escolhido)
+            return "ok"
+
+        adapter = TelegramAdapter(responder=fake_responder)
+
+        async def cenario():
+            await _salvar_sessao_inicial("66", _sessao(dict(_PERFIL_SO_FALTA_NIVEL)))
+            context = _fake_context()
+            await adapter._ao_receber_botao(_fake_callback_update(user_id=66, data="nivel:0"), context)
+            await adapter._ao_receber_botao(_fake_callback_update(user_id=66, data="nivel:1"), context)
+
+        asyncio.run(cenario())
+
+        assert chamadas == ["tecnico integrado", "tecnico subsequente"]
 
 
 class TestBotaoDeReinicio:
@@ -294,3 +507,28 @@ class TestComandoStart:
 
         assert sessao_depois["fase_dialogo"] == "inicio"
         assert sessao_depois["perfil"] == _PERFIL_COMPLETO
+
+
+class TestComandoRecomecar:
+    def test_recomecar_aciona_o_mesmo_gatilho_de_reinicio_do_texto(self, fake_redis, monkeypatch):
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "dummy:token-para-teste")
+        capturado = {}
+
+        def fake_responder(user_id, texto, sessao, nivel_escolhido=None, escolaridade_escolhida=None, alcance_escolhido=None):
+            capturado["texto"] = texto
+            return "ok"
+
+        adapter = TelegramAdapter(responder=fake_responder)
+        update = _fake_update_comando(user_id=70)
+
+        async def cenario():
+            await _salvar_sessao_inicial("70", _sessao(dict(_PERFIL_COMPLETO), fase="completo"))
+            await adapter._ao_receber_comando_recomecar(update, _fake_context())
+
+        asyncio.run(cenario())
+
+        # Mesmo texto-gatilho que "recomeçar" digitado -- não um texto
+        # sintético novo, pra reaproveitar exatamente o mesmo
+        # reconhecimento (`dialogue.reset.eh_gatilho_explicito_de_reinicio_total`).
+        assert capturado["texto"] == "recomeçar"
+        update.message.reply_text.assert_awaited_once()

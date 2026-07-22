@@ -34,12 +34,39 @@ _CAMPOS_EXTRAIDOS = (*CAMPOS_ESSENCIAIS, "modalidade", "alcance")
 # `dialogue/recommendation.py` pro default nesse caso.
 _ORDEM_COLETA = ("cidade", "escolaridade", "interesse", "alcance", "nivel")
 
+# Opcoes fechadas do campo "escolaridade", na ordem em que devem ser
+# apresentadas (rotulo legivel, valor canonico). Os valores batem
+# exatamente com o vocabulario fechado que PROMPT_EXTRACAO ja garante
+# extrair de fala livre -- usado pelos botoes inline do Telegram
+# (`channels/engine.py`), que pulam o extrator e usam o valor direto
+# quando a pessoa toca um botao.
+OPCOES_ESCOLARIDADE: tuple[tuple[str, str], ...] = (
+    ("Ensino fundamental", "ensino fundamental"),
+    ("Ensino médio", "ensino medio"),
+    ("Ensino médio técnico", "ensino medio tecnico"),
+    ("Já fiz uma faculdade", "superior"),
+)
+
+# Opcoes fechadas do campo "alcance", na ordem em que devem ser
+# apresentadas (rotulo legivel, valor canonico). Os valores batem
+# exatamente com `_ALCANCES_VALIDOS` (`dialogue/recommendation.py`) e
+# com o vocabulario fechado que PROMPT_EXTRACAO ja garante extrair de
+# fala livre -- usado pelos botoes inline do Telegram
+# (`channels/engine.py`), que pulam o extrator e usam o valor direto
+# quando a pessoa toca um botao.
+OPCOES_ALCANCE: tuple[tuple[str, str], ...] = (
+    ("Só na minha cidade", "local"),
+    ("Cidade próxima também", "regional"),
+    ("Prefiro a distância (EAD)", "ead"),
+    ("Não me importo com o lugar", "qualquer"),
+)
+
 # Opcoes fechadas do campo "nivel", na ordem em que devem ser
 # apresentadas (rotulo legivel, valor canonico). Os valores batem
 # exatamente com o que PROMPT_EXTRACAO ja garante extrair de fala
-# livre -- usado tanto pelo menu numerado em texto quanto pelos botoes
-# inline do Telegram (`channels/engine.py`), que pulam o extrator e
-# usam o valor direto quando a pessoa toca um botao.
+# livre -- usado pelos botoes inline do Telegram (`channels/engine.py`),
+# que pulam o extrator e usam o valor direto quando a pessoa toca um
+# botao.
 OPCOES_NIVEL: tuple[tuple[str, str], ...] = (
     ("Técnico integrado", "tecnico integrado"),
     ("Técnico subsequente", "tecnico subsequente"),
@@ -77,6 +104,27 @@ def niveis_compativeis(escolaridade: str | None) -> tuple[str, ...]:
     if not escolaridade:
         return _TODOS_OS_NIVEIS
     return _NIVEIS_POR_ESCOLARIDADE.get(_normaliza(escolaridade), _TODOS_OS_NIVEIS)
+
+
+def aplicar_coerencia_nivel(perfil_bruto: dict) -> dict:
+    """Preenche "nivel" quando a escolaridade já deixa só um nível
+    plausível (ex.: "superior" só combina com "FIC") -- evita perguntar
+    de novo um campo que já está implícito. Com mais de uma opção
+    compatível, deixa "nivel" faltante mesmo: quem pergunta
+    (`_gerar_pergunta_coleta`/`_com_botoes_de_campo_fechado`, em
+    `channels/engine.py`) restringe as opções via `niveis_compativeis`,
+    sem perguntar a toa.
+
+    Usada tanto por `extrair_perfil` (fala livre) quanto pelo bypass de
+    botão de escolaridade em `channels/engine.py` (que pula o extrator
+    mas precisa da mesma coerência).
+    """
+    if perfil_bruto.get("nivel") or not perfil_bruto.get("escolaridade"):
+        return perfil_bruto
+    compativeis = niveis_compativeis(perfil_bruto["escolaridade"])
+    if len(compativeis) == 1:
+        return {**perfil_bruto, "nivel": compativeis[0]}
+    return perfil_bruto
 
 # Máximo de turnos recentes passados como contexto pra extração --
 # só o suficiente pra resolver uma referência à mensagem anterior, sem
@@ -227,18 +275,7 @@ def extrair_perfil(texto: str, perfil_atual: dict, historico: list[dict] | None 
         if anterior is not None and _eh_resposta_nao_sei(anterior):
             mesclado["interesse"] = _INTERESSE_SEM_PREFERENCIA
 
-    # Coerencia escolaridade -> nivel: quando a escolaridade ja recem
-    # informada deixa um unico nivel plausivel (ex: "superior" so
-    # combina com "FIC"), preenche direto em vez de perguntar de novo
-    # um campo que ja esta implicito -- evita oferecer "tecnico
-    # integrado" pra quem ja fez faculdade, por exemplo. Com mais de
-    # uma opcao compativel, deixa "nivel" faltante mesmo: quem pergunta
-    # (`_gerar_pergunta_coleta`/`_com_botoes_de_nivel`) restringe as
-    # opcoes mostradas via `niveis_compativeis`, sem perguntar a toa.
-    if not mesclado.get("nivel") and mesclado.get("escolaridade"):
-        compativeis = niveis_compativeis(mesclado["escolaridade"])
-        if len(compativeis) == 1:
-            mesclado["nivel"] = compativeis[0]
+    mesclado = aplicar_coerencia_nivel(mesclado)
 
     try:
         return Perfil(**mesclado)

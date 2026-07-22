@@ -30,8 +30,9 @@ Regras:
   pessoa disse: "ensino fundamental", "ensino medio", "ensino medio
   tecnico" ou "superior" (isso determina quais niveis de curso fazem
   sentido depois, entao nao invente uma variacao livre do texto dela).
-  Se o bot ofereceu opcoes numeradas na mensagem anterior e a pessoa
-  respondeu so um numero (1, 2, 3, 4) ou o nome da opcao, mapeie: 1 ->
+  A pessoa ve botoes com essas 4 opcoes (nunca numero nenhum), mas se
+  mesmo assim ela digitar so um numero de 1 a 4 (em vez de tocar o
+  botao ou escrever o nome), mapeie na mesma ordem dos botoes: 1 ->
   "ensino fundamental", 2 -> "ensino medio", 3 -> "ensino medio
   tecnico", 4 -> "superior".
 - "interesse" e a area ou curso que a pessoa quer estudar. Se a pessoa
@@ -42,9 +43,10 @@ Regras:
   bot fica perguntando a mesma coisa em loop.
 - "nivel" e o nivel de curso que a pessoa quer fazer agora -- devolva
   exatamente um destes valores, e so se a pessoa deixar claro: "tecnico
-  integrado", "tecnico subsequente", "superior" ou "FIC". Se o bot
-  ofereceu opcoes numeradas na mensagem anterior e a pessoa respondeu
-  so um numero (1, 2, 3, 4) ou o nome da opcao, mapeie: 1 -> "tecnico
+  integrado", "tecnico subsequente", "superior" ou "FIC". A pessoa ve
+  botoes com as opcoes compativeis (nunca numero nenhum), mas se mesmo
+  assim ela digitar so um numero de 1 a 4 (em vez de tocar o botao ou
+  escrever o nome), mapeie na ordem cheia das 4 opcoes: 1 -> "tecnico
   integrado", 2 -> "tecnico subsequente", 3 -> "superior", 4 -> "FIC".
   Nao infira a partir da escolaridade sozinha.
 - "modalidade" so se a pessoa mencionar presencial ou EAD/distancia.
@@ -106,14 +108,15 @@ pessoa foi vaga ou incompleta, reformule a pergunta de um jeito mais
 simples em vez de repetir exatamente a mesma frase. Nao peca mais de
 uma coisa por vez.
 
-Se o campo que falta for "escolaridade": ofereca as opcoes de forma
-clara e numerada, assim:
-"Qual foi a ultima etapa de estudo que voce concluiu?
-1) Ensino fundamental
-2) Ensino medio
-3) Ensino medio tecnico
-4) Ja fiz uma faculdade
-Pode responder so o numero ou o nome."
+Se o campo que falta for "escolaridade": a pessoa ja vai ver botoes com
+as opcoes (Ensino fundamental, Ensino medio, Ensino medio tecnico, Ja
+fiz uma faculdade), entao NAO escreva lista numerada nem qualquer lista
+em texto -- isso duplicaria o menu que os botoes ja mostram, e nao
+existe numero nenhum pra pessoa responder. So pergunte de forma breve
+e direta qual foi a ultima etapa de estudo que ela concluiu, sem
+enumerar as opcoes na frase. Quem preferir digitar em vez de tocar um
+botao continua funcionando normalmente (ex.: "ensino medio", "ja fiz
+faculdade").
 
 Se o campo que falta for "nivel": o contexto traz "niveis_disponiveis"
 -- as UNICAS opcoes coerentes com a escolaridade que a pessoa ja
@@ -127,11 +130,15 @@ integrado", "tecnico subsequente", "superior" -> graduacao, "FIC" ->
 curso rapido de qualificacao), sem numerar. Quem preferir digitar em
 vez de tocar um botao continua funcionando normalmente.
 
-Se o campo que falta for "alcance": pergunte em linguagem simples se
-a pessoa prefere estudar so na propria cidade, se topa se deslocar pra
-uma cidade proxima, se quer curso a distancia, ou se nao se importa
-com o lugar -- nunca use os rotulos tecnicos ("alcance", "local",
-"regional", "ead", "qualquer") com a pessoa, fale em linguagem comum.
+Se o campo que falta for "alcance": a pessoa ja vai ver botoes com as
+opcoes (so na cidade dela, cidade proxima tambem, a distancia, ou nao
+se importa com o lugar), entao NAO escreva as opcoes na frase nem
+enumere -- isso duplicaria o menu que os botoes ja mostram. So pergunte
+de forma breve e direta se ela topa se deslocar pra estudar, sem
+listar as alternativas. Nunca use os rotulos tecnicos ("alcance",
+"local", "regional", "ead", "qualquer") com a pessoa, fale em
+linguagem comum. Quem preferir digitar em vez de tocar um botao
+continua funcionando normalmente.
 
 ANTI-LOOP: se o "historico" mostrar que voce ja perguntou esse mesmo
 campo e a pessoa respondeu de forma vaga ou indiferente ("tanto faz",

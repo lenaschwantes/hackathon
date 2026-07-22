@@ -7,7 +7,16 @@ Logica de reinicio do perfil, com duas granularidades:
   Exige confirmacao antes de aplicar (ver `fase_dialogo ==
   "confirmando_reinicio"` no engine.py).
 
-Ambas sao roteadas por texto livre, via `classificar_pedido_reinicio`.
+Ambas sao roteadas por texto livre. "buscar_outra_area" e uma variante
+mais ambigua de "comecar_de_novo" so passam por
+`classificar_pedido_reinicio` (classificador probabilistico, LLM) --
+restrito a perfil ja completo, por ser pouco confiavel durante a coleta
+(ver comentario em `channels/engine.py::responder`). Ja "comecar_de_novo"
+tem tambem uma camada rapida e deterministica (regex, sem LLM):
+`eh_gatilho_explicito_de_reinicio_total`, disponivel em QUALQUER fase da
+conversa -- coleta, RAG ou perfil completo -- com prioridade sobre o
+roteamento normal.
+
 A confirmacao de "comecar_de_novo" tambem pode vir de um botao inline
 do Telegram (ver `channels/telegram.py` e `channels/engine.py`) -- o
 botao usa os textos sinteticos `TEXTO_SINTETICO_CONFIRMAR`/
@@ -18,6 +27,7 @@ separada pro caminho de botao.
 
 import logging
 import re
+import unicodedata
 
 import anthropic
 
@@ -25,6 +35,45 @@ from config.prompts import PROMPT_CLASSIFICA_REINICIO
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _normaliza(texto: str) -> str:
+    """Normaliza texto para comparação: minúsculo e sem acento."""
+    sem_acento = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode()
+    return sem_acento.strip().lower()
+
+
+# Gatilho explícito de reinício total -- palavra-chave principal e
+# variações fortes o suficiente pra disparar sem depender do
+# classificador (regex, sem LLM, mesmo padrão em duas camadas de
+# `dialogue/intent.py`). "recomeçar" é a palavra-gatilho principal
+# (evita "menu", ambíguo com pedido de ver as opções de um teclado).
+# Radicais (\w*), não frase fixa -- cobre conjugação comum em portugues
+# ("recomecar", "recomeca", "recomecando"; "comecar de novo", "comeca
+# de novo") sem precisar listar cada forma. Só entram aqui radicais que
+# só fazem sentido como reinício -- nada de palavra solta que possa
+# aparecer numa resposta normal de coleta.
+_REGEX_GATILHO_REINICIO_TOTAL = re.compile(
+    r"\brecomec\w*\b"
+    r"|\bcomec\w*\s+de\s+novo\b"
+    r"|\breinici\w*\b"
+    r"|\besquece\s+tudo\b"
+)
+
+
+def eh_gatilho_explicito_de_reinicio_total(texto: str) -> bool:
+    """
+    Camada rápida (sem LLM) de reconhecimento de "comecar_de_novo",
+    disponível a qualquer momento da conversa -- durante a coleta de
+    perfil, durante uma pergunta ao RAG, ou depois de uma recomendação.
+    Tem prioridade sobre o roteamento normal: detectado, interrompe o
+    que estiver acontecendo (mesmo uma pergunta específica de coleta) e
+    parte pra confirmação, sem precisar que o perfil já esteja completo
+    -- ao contrário de `classificar_pedido_reinicio` (probabilístico,
+    mantido restrito a perfil completo pelo motivo documentado em
+    `channels/engine.py::responder`).
+    """
+    return bool(_REGEX_GATILHO_REINICIO_TOTAL.search(_normaliza(texto)))
 
 _CAMPOS_PRESERVADOS_OUTRA_AREA = ("cidade", "escolaridade", "alcance")
 _TODOS_OS_CAMPOS_PERFIL = (

@@ -28,13 +28,23 @@ from dialogue.onboarding import (
     TEXTO_SINTETICO_BUSCAR_CURSO,
     TEXTO_SINTETICO_TENHO_DUVIDA,
 )
-from dialogue.profile import OPCOES_NIVEL, Perfil, determinar_fase, extrair_perfil, niveis_compativeis
+from dialogue.profile import (
+    OPCOES_ALCANCE,
+    OPCOES_ESCOLARIDADE,
+    OPCOES_NIVEL,
+    Perfil,
+    aplicar_coerencia_nivel,
+    determinar_fase,
+    extrair_perfil,
+    niveis_compativeis,
+)
 from dialogue.recommendation import gerar_recomendacao, quer_nova_recomendacao
 from dialogue.reset import (
     CALLBACK_REINICIO_CANCELAR,
     CALLBACK_REINICIO_CONFIRMAR,
     classificar_pedido_reinicio,
     eh_confirmacao_positiva,
+    eh_gatilho_explicito_de_reinicio_total,
     limpar_para_outra_area,
     perfil_zerado,
 )
@@ -54,7 +64,8 @@ class Botao:
 class Resposta(str):
     """
     Texto de resposta que deve vir acompanhado de botões inline (hoje:
-    seleção de nível, confirmação de reinício). Subclasse de `str` de
+    seleção de escolaridade, seleção de nível, confirmação de
+    reinício). Subclasse de `str` de
     propósito -- todo código que já trata o retorno de `responder()`
     como string simples (comparação de igualdade, f-string, `reply_text`,
     `json.dumps` no histórico) continua funcionando sem nenhuma mudança;
@@ -89,6 +100,17 @@ def _botoes_nivel(escolaridade: str | None) -> list[list[Botao]]:
         if valor in compativeis
     ]
     return [botoes[i : i + 2] for i in range(0, len(botoes), 2)]
+
+
+_BOTOES_ESCOLARIDADE: list[list[Botao]] = [
+    [Botao(rotulo, f"escolaridade:{i}") for i, (rotulo, _) in enumerate(OPCOES_ESCOLARIDADE)][0:2],
+    [Botao(rotulo, f"escolaridade:{i}") for i, (rotulo, _) in enumerate(OPCOES_ESCOLARIDADE)][2:4],
+]
+
+_BOTOES_ALCANCE: list[list[Botao]] = [
+    [Botao(rotulo, f"alcance:{i}") for i, (rotulo, _) in enumerate(OPCOES_ALCANCE)][0:2],
+    [Botao(rotulo, f"alcance:{i}") for i, (rotulo, _) in enumerate(OPCOES_ALCANCE)][2:4],
+]
 
 # Opção segura (nao-destrutiva) primeiro, e rotulos que restatam a
 # consequencia real -- nunca "Sim"/"Nao" vago -- seguindo a diretriz de
@@ -263,15 +285,24 @@ def _responder_via_rag(user_id: str, texto: str) -> str:
     return texto_resposta
 
 
-def _com_botoes_de_nivel(pergunta: str, perfil: Perfil) -> str | Resposta:
+def _com_botoes_de_campo_fechado(pergunta: str, perfil: Perfil) -> str | Resposta:
     """
-    Envolve a pergunta de coleta com os botões de nível quando "nivel"
-    é o próximo campo faltante -- único ponto em que decide se anexa
-    esses botões, usado nos dois lugares que chamam
-    `_gerar_pergunta_coleta` (coleta normal e pós-"buscar outra área").
+    Envolve a pergunta de coleta com o teclado de botões certo quando o
+    próximo campo faltante é de conjunto fechado (hoje: "escolaridade",
+    "alcance" e "nivel") -- único ponto que decide se anexa botões,
+    usado nos lugares que chamam `_gerar_pergunta_coleta` (coleta
+    normal, pós-"buscar outra área"). Campos abertos por design (cidade,
+    interesse) nunca ganham botão aqui -- continuam texto livre, como
+    sempre foram.
     """
     faltantes = perfil.campos_faltantes()
-    if faltantes and faltantes[0] == "nivel":
+    if not faltantes:
+        return pergunta
+    if faltantes[0] == "escolaridade":
+        return Resposta(pergunta, botoes=_BOTOES_ESCOLARIDADE)
+    if faltantes[0] == "alcance":
+        return Resposta(pergunta, botoes=_BOTOES_ALCANCE)
+    if faltantes[0] == "nivel":
         return Resposta(pergunta, botoes=_botoes_nivel(perfil.escolaridade))
     return pergunta
 
@@ -281,19 +312,22 @@ def responder(
     texto: str,
     sessao: dict,
     nivel_escolhido: str | None = None,
+    escolaridade_escolhida: str | None = None,
+    alcance_escolhido: str | None = None,
 ) -> str:
     """
     Recebe o id do usuário, o texto que ele mandou, e a sessão atual.
 
-    `nivel_escolhido` é preenchido só quando a origem da chamada foi um
-    toque num botão inline de nível (`channels/telegram.py`): pula a
-    chamada ao extrator (LLM) e define `Perfil.nivel` direto com o
-    valor do botão -- mais barato e determinístico que tratar o rótulo
-    do botão como se a pessoa tivesse digitado. Por construção, um
-    botão de nível só existe durante a fase "coletando", nunca pode ser
-    um pedido de reinício, então também pula os blocos de reinício
-    abaixo (`classificar_pedido_reinicio` custaria uma chamada paga à
-    toa nesse caso).
+    `nivel_escolhido`/`escolaridade_escolhida`/`alcance_escolhido` são
+    preenchidos só quando a origem da chamada foi um toque num botão
+    inline correspondente (`channels/telegram.py`): pulam a chamada ao
+    extrator (LLM) e definem o campo direto com o valor do botão -- mais
+    barato e determinístico que tratar o rótulo do botão como se a
+    pessoa tivesse digitado. Por construção, esses botões só existem
+    durante a fase "coletando", nunca podem ser um pedido de reinício,
+    então também pulam os blocos de reinício abaixo
+    (`classificar_pedido_reinicio` custaria uma chamada paga à toa nesse
+    caso).
 
     Antes de qualquer outra coisa, verifica se há um pedido de
     reinício em andamento (`fase_dialogo == "confirmando_reinicio"`)
@@ -338,7 +372,28 @@ def responder(
     """
     texto = texto[:_MAX_CARACTERES_MENSAGEM]
 
-    if nivel_escolhido is None:
+    # Gatilho explícito de reinício total ("recomeçar" e variações
+    # fortes) tem prioridade sobre QUALQUER roteamento normal, em
+    # qualquer fase -- coleta (mesmo no meio de uma pergunta específica
+    # de campo), RAG, ou perfil já completo. Deterministico (regex, sem
+    # LLM): ver `dialogue.reset.eh_gatilho_explicito_de_reinicio_total`.
+    # Não interrompe uma confirmação já em andamento -- essa segue pro
+    # bloco de baixo, que trata a resposta como confirmação/negação.
+    if (
+        texto
+        and sessao.get("fase_dialogo") != "confirmando_reinicio"
+        and eh_gatilho_explicito_de_reinicio_total(texto)
+    ):
+        sessao["fase_dialogo_anterior"] = sessao.get("fase_dialogo")
+        sessao["fase_dialogo"] = "confirmando_reinicio"
+        try:
+            pergunta = _gerar_confirmacao_reinicio(texto)
+        except Exception as exc:
+            _logar_falha("gerar confirmacao de reinicio", user_id, exc)
+            return Resposta(_MENSAGEM_FALLBACK_CONFIRMACAO_REINICIO, botoes=_BOTOES_REINICIO)
+        return Resposta(pergunta, botoes=_BOTOES_REINICIO)
+
+    if nivel_escolhido is None and escolaridade_escolhida is None and alcance_escolhido is None:
         # Reinício: verificado antes de qualquer outra coisa, pois pode
         # ser pedido em qualquer ponto da conversa.
         if sessao.get("fase_dialogo") == "confirmando_reinicio":
@@ -385,7 +440,7 @@ def responder(
                 except Exception as exc:
                     _logar_falha("gerar pergunta apos buscar outra area", user_id, exc)
                     return _MENSAGEM_FALLBACK
-                return _com_botoes_de_nivel(pergunta, perfil_pos_reset)
+                return _com_botoes_de_campo_fechado(pergunta, perfil_pos_reset)
             elif pedido == "comecar_de_novo":
                 sessao["fase_dialogo_anterior"] = sessao.get("fase_dialogo")
                 sessao["fase_dialogo"] = "confirmando_reinicio"
@@ -435,8 +490,22 @@ def responder(
 
     if sessao.get("fase_dialogo") != "conversa_livre" and determinar_fase(perfil) != "completo":
         historico = sessao.get("historico") or []
-        if nivel_escolhido:
+        # Botão obsoleto (ex.: a pessoa reiniciou e a coleta recomeçou
+        # do zero, mas ainda tinha um teclado antigo na tela): a fase
+        # pode continuar "coletando" depois do reinício, então só isso
+        # não basta pra confirmar que o botão ainda vale -- confere
+        # também se o campo do botão ainda é de fato o próximo
+        # faltante. Se não for, cai no mesmo fallback dos outros casos
+        # de botão obsoleto: trata o rótulo como texto livre normal.
+        faltantes_atuais = perfil.campos_faltantes()
+        proximo_campo_esperado = faltantes_atuais[0] if faltantes_atuais else None
+        if nivel_escolhido and proximo_campo_esperado == "nivel":
             perfil = Perfil(**{**perfil_atual, "nivel": nivel_escolhido})
+        elif escolaridade_escolhida and proximo_campo_esperado == "escolaridade":
+            mesclado = aplicar_coerencia_nivel({**perfil_atual, "escolaridade": escolaridade_escolhida})
+            perfil = Perfil(**mesclado)
+        elif alcance_escolhido and proximo_campo_esperado == "alcance":
+            perfil = Perfil(**{**perfil_atual, "alcance": alcance_escolhido})
         else:
             perfil = extrair_perfil(texto, perfil_atual, historico=historico)
         sessao["perfil"] = perfil.model_dump()
@@ -448,7 +517,7 @@ def responder(
             except Exception as exc:
                 _logar_falha("gerar pergunta de coleta", user_id, exc)
                 return _MENSAGEM_FALLBACK
-            return _com_botoes_de_nivel(pergunta, perfil)
+            return _com_botoes_de_campo_fechado(pergunta, perfil)
 
         try:
             return gerar_recomendacao(perfil)
@@ -475,7 +544,7 @@ def responder(
             if determinar_fase(perfil) != "completo":
                 sessao["fase_dialogo"] = "coletando"
                 pergunta = _gerar_pergunta_coleta(perfil)
-                return _com_botoes_de_nivel(pergunta, perfil)
+                return _com_botoes_de_campo_fechado(pergunta, perfil)
             return gerar_recomendacao(perfil)
         except Exception as exc:
             _logar_falha("gerar nova recomendação", user_id, exc)

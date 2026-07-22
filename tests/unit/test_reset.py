@@ -2,12 +2,15 @@
 Testes puros do modulo de reinicio -- nao tocam Anthropic de verdade.
 """
 
+import pytest
+
 from dialogue import reset
 from dialogue.reset import (
     TEXTO_SINTETICO_CANCELAR,
     TEXTO_SINTETICO_CONFIRMAR,
     classificar_pedido_reinicio,
     eh_confirmacao_positiva,
+    eh_gatilho_explicito_de_reinicio_total,
     limpar_para_outra_area,
     perfil_zerado,
 )
@@ -103,3 +106,42 @@ def test_texto_sintetico_confirmar_e_reconhecido_como_positivo():
 
 def test_texto_sintetico_cancelar_e_reconhecido_como_negativo():
     assert eh_confirmacao_positiva(TEXTO_SINTETICO_CANCELAR) is False
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "recomeçar",
+        "/recomecar",
+        "Recomeçar",
+        "quero recomeçar",
+        "quero começar de novo",
+        "apaga meus dados e comeca de novo",  # conjugação "comeca", não "comecar"
+        "esquece tudo",
+        "reinicia",
+        "reiniciar",
+        "vamos reiniciar do zero",
+        "reinicia tudo",
+    ],
+)
+def test_gatilho_de_reinicio_total_reconhece_variacoes(texto):
+    assert eh_gatilho_explicito_de_reinicio_total(texto) is True
+
+
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "quero tecnologia",
+        "Florianopolis",
+        "topo ir pra uma cidade proxima",
+        "ensino medio",
+        "sim",
+        "quando fecha a inscricao?",
+        "",
+    ],
+)
+def test_gatilho_de_reinicio_total_nao_falso_positivo_em_resposta_normal_de_coleta(texto):
+    # Mesmas respostas que já causaram falso positivo no classificador
+    # probabilístico (ver comentário em channels/engine.py::responder)
+    # -- o gatilho rápido não pode repetir esse erro.
+    assert eh_gatilho_explicito_de_reinicio_total(texto) is False
