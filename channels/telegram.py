@@ -22,11 +22,20 @@ from channels.base import ChannelAdapter
 from channels.engine import _BOTOES_INICIO, _MAX_CARACTERES_MENSAGEM, _MENSAGEM_MENU_INICIAL, Botao
 from channels.engine import responder as fake_responder
 from channels.session import carregar_sessao, salvar_sessao
+from dialogue.editais_catalogo import buscar_edital_por_indice
 from dialogue.onboarding import (
     CALLBACK_INICIO_BUSCAR,
     CALLBACK_INICIO_DUVIDA,
+    CALLBACK_DUVIDA_GUIA_CURSOS,
+    CALLBACK_DUVIDA_PRAZOS,
+    CALLBACK_EDITAL_VER_OUTRO,
+    CALLBACK_EDITAL_ENCERRAR,
     TEXTO_SINTETICO_BUSCAR_CURSO,
     TEXTO_SINTETICO_TENHO_DUVIDA,
+    TEXTO_SINTETICO_GUIA_CURSOS,
+    TEXTO_SINTETICO_DUVIDA_PRAZOS,
+    TEXTO_SINTETICO_VER_OUTRO_EDITAL,
+    TEXTO_SINTETICO_ENCERRAR_DUVIDA,
 )
 from dialogue.profile import OPCOES_ALCANCE, OPCOES_ESCOLARIDADE, OPCOES_NIVEL
 from dialogue.reset import (
@@ -214,6 +223,21 @@ class TelegramAdapter(ChannelAdapter):
                 TEXTO_SINTETICO_BUSCAR_CURSO if data == CALLBACK_INICIO_BUSCAR else TEXTO_SINTETICO_TENHO_DUVIDA
             )
             resposta = self._responder(user_id, texto_usuario, sessao)
+        elif data in (CALLBACK_DUVIDA_GUIA_CURSOS, CALLBACK_DUVIDA_PRAZOS):
+            texto_usuario = (
+                TEXTO_SINTETICO_GUIA_CURSOS if data == CALLBACK_DUVIDA_GUIA_CURSOS else TEXTO_SINTETICO_DUVIDA_PRAZOS
+            )
+            resposta = self._responder(user_id, texto_usuario, sessao)
+        elif data in (CALLBACK_EDITAL_VER_OUTRO, CALLBACK_EDITAL_ENCERRAR):
+            texto_usuario = (
+                TEXTO_SINTETICO_VER_OUTRO_EDITAL if data == CALLBACK_EDITAL_VER_OUTRO else TEXTO_SINTETICO_ENCERRAR_DUVIDA
+            )
+            resposta = self._responder(user_id, texto_usuario, sessao)
+        elif data is not None and data.startswith("edital:"):
+            indice = int(data.split(":", 1)[1])
+            edital = buscar_edital_por_indice(indice)
+            texto_usuario = edital["nome"] if edital else f"edital #{indice}"
+            resposta = self._responder(user_id, texto_usuario, sessao, edital_indice_escolhido=indice)
         else:
             logger.warning("callback_data desconhecido recebido: %r", data)
             return

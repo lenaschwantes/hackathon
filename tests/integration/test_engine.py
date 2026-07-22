@@ -240,14 +240,6 @@ class TestReinicio:
     """
 
     def test_perfil_incompleto_nao_chama_classificador_de_reinicio(self, monkeypatch):
-        # Durante a coleta (perfil ainda incompleto -- vazio ou com
-        # alguns campos), o classificador de reinicio nao roda: ele so
-        # ve o texto solto, sem saber que pergunta o bot acabou de
-        # fazer, e e pouco confiavel distinguindo "respondendo a
-        # pergunta atual" de "pedindo reinicio" -- confirmado ao vivo,
-        # respostas normais de interesse/alcance foram classificadas
-        # incorretamente como buscar_outra_area, travando a coleta em
-        # loop. Por isso so roda com o perfil ja completo.
         def _classificador_nao_deveria_ser_chamado(texto):
             raise AssertionError("classificar_pedido_reinicio não deveria ser chamado com perfil incompleto")
 
@@ -656,19 +648,6 @@ class TestBifurcacaoInicial:
         assert resposta == "Em qual cidade você mora?"
         assert sessao["fase_dialogo"] == "coletando"
 
-    def test_botao_tenho_duvida_entra_em_conversa_livre_sem_chamar_classificador(self, monkeypatch):
-        def _classificador_nao_deveria_ser_chamado(texto):
-            raise AssertionError("nenhum classificador deveria ser chamado pro botão sintético de dúvida")
-
-        monkeypatch.setattr(engine, "quer_nova_recomendacao", _classificador_nao_deveria_ser_chamado)
-        monkeypatch.setattr(engine, "precisa_busca", _classificador_nao_deveria_ser_chamado)
-
-        sessao = _sessao_inicio()
-        resposta = responder("user-1", "tenho uma duvida", sessao)
-
-        assert resposta == engine._MENSAGEM_CONVITE_DUVIDA
-        assert sessao["fase_dialogo"] == "conversa_livre"
-
     def test_conversa_livre_ja_estabelecida_responde_via_rag_sem_extrair_perfil(self, monkeypatch):
         def _extrair_perfil_nao_deveria_ser_chamado(texto, perfil_atual, historico=None):
             raise AssertionError("extrair_perfil não deveria ser chamado em conversa_livre")
@@ -720,3 +699,105 @@ class TestTetoDeMensagem:
         responder("user-1", "A" * 50_000, sessao)
 
         assert capturado["tamanho"] <= engine._MAX_CARACTERES_MENSAGEM
+
+
+class TestMenuDuvida:
+    """
+    Cobertura do sub-menu "Tenho uma dúvida": guia de cursos (resposta
+    fixa) e dúvidas sobre prazos (sub-menu de editais, com detalhe e
+    botões de continuação).
+    """
+
+    def test_botao_tenho_duvida_mostra_submenu_sem_chamar_classificador(self, monkeypatch):
+        def _classificador_nao_deveria_ser_chamado(texto):
+            raise AssertionError("nenhum classificador deveria ser chamado pro botão sintético de dúvida")
+
+        monkeypatch.setattr(engine, "quer_nova_recomendacao", _classificador_nao_deveria_ser_chamado)
+        monkeypatch.setattr(engine, "precisa_busca", _classificador_nao_deveria_ser_chamado)
+
+        sessao = _sessao_inicio()
+        resposta = responder("user-1", engine.TEXTO_SINTETICO_TENHO_DUVIDA, sessao)
+
+        assert resposta == engine._MENSAGEM_MENU_DUVIDA
+        assert resposta.botoes == engine._BOTOES_DUVIDA
+        assert sessao["fase_dialogo"] == "menu_duvida"
+
+    def test_guia_de_cursos_responde_direto_sem_submenu(self, monkeypatch):
+        sessao = _sessao({}, fase="menu_duvida")
+        resposta = responder("user-1", engine.TEXTO_SINTETICO_GUIA_CURSOS, sessao)
+
+        assert resposta == engine._MENSAGEM_GUIA_CURSOS
+        assert sessao["fase_dialogo"] == "conversa_livre"
+
+    def test_duvida_prazos_mostra_lista_de_editais_abertos(self, monkeypatch):
+        editais_fake = [
+            {"nome": "Edital Técnico Integrado 2026", "prazo_inicio": "1/1", "prazo_fim": "2/2",
+             "link_inscricao": "x", "forma_ingresso": "sorteio", "link_pdf": "y"},
+            {"nome": "Edital PROEJA", "prazo_inicio": "3/3", "prazo_fim": "4/4",
+             "link_inscricao": "x2", "forma_ingresso": "ampla concorrência", "link_pdf": "y2"},
+        ]
+        monkeypatch.setattr(engine, "carregar_editais_abertos", lambda: editais_fake)
+
+        sessao = _sessao({}, fase="menu_duvida")
+        resposta = responder("user-1", engine.TEXTO_SINTETICO_DUVIDA_PRAZOS, sessao)
+
+        assert resposta == "Qual edital você quer consultar?"
+        assert [b[0].rotulo for b in resposta.botoes] == ["Edital Técnico Integrado 2026", "Edital PROEJA"]
+        assert sessao["fase_dialogo"] == "selecionando_edital"
+
+    def test_duvida_prazos_sem_nenhum_edital_aberto(self, monkeypatch):
+        monkeypatch.setattr(engine, "carregar_editais_abertos", lambda: [])
+
+        sessao = _sessao({}, fase="menu_duvida")
+        resposta = responder("user-1", engine.TEXTO_SINTETICO_DUVIDA_PRAZOS, sessao)
+
+        assert resposta == "No momento não há nenhum edital aberto cadastrado."
+        assert getattr(resposta, "botoes", None) is None
+
+    def test_selecionar_edital_devolve_detalhe_formatado_com_botoes(self, monkeypatch):
+        edital_fake = {
+            "nome": "Edital Técnico Integrado 2026",
+            "prazo_inicio": "15/06/2026",
+            "prazo_fim": "25/07/2026",
+            "link_inscricao": "https://ifsc.edu.br/inscricao/x",
+            "forma_ingresso": "Sorteio",
+            "link_pdf": "https://ifsc.edu.br/editais/x.pdf",
+        }
+        monkeypatch.setattr(engine, "buscar_edital_por_indice", lambda i: edital_fake)
+
+        sessao = _sessao({}, fase="selecionando_edital")
+        resposta = responder("user-1", "Edital Técnico Integrado 2026", sessao, edital_indice_escolhido=0)
+
+        assert "📅 Prazo de inscrição: 15/06/2026 a 25/07/2026" in resposta
+        assert "🔗 Link para inscrição: https://ifsc.edu.br/inscricao/x" in resposta
+        assert "📋 Forma de ingresso: Sorteio" in resposta
+        assert "📄 Edital completo: https://ifsc.edu.br/editais/x.pdf" in resposta
+        assert resposta.botoes == engine._BOTOES_POS_EDITAL
+
+    def test_indice_de_edital_invalido_cai_no_fallback(self, monkeypatch):
+        monkeypatch.setattr(engine, "buscar_edital_por_indice", lambda i: None)
+
+        sessao = _sessao({}, fase="selecionando_edital")
+        resposta = responder("user-1", "texto qualquer", sessao, edital_indice_escolhido=99)
+
+        assert resposta == _MENSAGEM_FALLBACK
+
+    def test_ver_outro_edital_mostra_a_lista_de_novo(self, monkeypatch):
+        editais_fake = [
+            {"nome": "Edital X", "prazo_inicio": "1/1", "prazo_fim": "2/2",
+             "link_inscricao": "x", "forma_ingresso": "sorteio", "link_pdf": "y"},
+        ]
+        monkeypatch.setattr(engine, "carregar_editais_abertos", lambda: editais_fake)
+
+        sessao = _sessao({}, fase="selecionando_edital")
+        resposta = responder("user-1", engine.TEXTO_SINTETICO_VER_OUTRO_EDITAL, sessao)
+
+        assert resposta == "Qual edital você quer consultar?"
+        assert sessao["fase_dialogo"] == "selecionando_edital"
+
+    def test_encerrar_duvida_volta_pra_conversa_livre(self, monkeypatch):
+        sessao = _sessao({}, fase="selecionando_edital")
+        resposta = responder("user-1", engine.TEXTO_SINTETICO_ENCERRAR_DUVIDA, sessao)
+
+        assert resposta == engine._MENSAGEM_ENCERRAMENTO_DUVIDA
+        assert sessao["fase_dialogo"] == "conversa_livre"
