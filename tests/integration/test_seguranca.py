@@ -27,6 +27,7 @@ import pytest
 from dotenv import load_dotenv
 
 from channels import engine
+from config.settings import settings
 from infra import rate_limit
 from channels import session as session_module
 from channels.engine import _MENSAGEM_FALLBACK, responder
@@ -306,14 +307,14 @@ class TestAbusoDeRecurso:
         async def cenario():
             return [
                 await rate_limit.permitido("user-rl")
-                for _ in range(rate_limit.LIMITE_MENSAGENS + 2)
+                for _ in range(settings.rate_limit_mensagens + 2)
             ]
 
         resultados = asyncio.run(cenario())
 
-        assert resultados[: rate_limit.LIMITE_MENSAGENS] == [True] * rate_limit.LIMITE_MENSAGENS
-        assert resultados[rate_limit.LIMITE_MENSAGENS] is False
-        assert resultados[rate_limit.LIMITE_MENSAGENS + 1] is False
+        assert resultados[: settings.rate_limit_mensagens] == [True] * settings.rate_limit_mensagens
+        assert resultados[settings.rate_limit_mensagens] is False
+        assert resultados[settings.rate_limit_mensagens + 1] is False
 
     def test_rate_limit_bloqueia_sem_chamar_o_motor(self, fake_redis, monkeypatch):
         monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "dummy:token-para-teste")
@@ -327,14 +328,14 @@ class TestAbusoDeRecurso:
         adapter = TelegramAdapter(responder=fake_responder)
 
         async def cenario():
-            for i in range(rate_limit.LIMITE_MENSAGENS + 1):
+            for i in range(settings.rate_limit_mensagens + 1):
                 update = _fake_update(user_id=42, texto=f"mensagem {i}")
                 await adapter._ao_receber(update, None)
 
         asyncio.run(cenario())
 
-        assert len(chamadas) == rate_limit.LIMITE_MENSAGENS, (
-            f"esperava exatamente {rate_limit.LIMITE_MENSAGENS} chamadas ao motor "
+        assert len(chamadas) == settings.rate_limit_mensagens, (
+            f"esperava exatamente {settings.rate_limit_mensagens} chamadas ao motor "
             f"(a (N+1)-ésima deveria ser bloqueada antes de chegar lá), "
             f"mas o motor foi chamado {len(chamadas)} vezes"
         )
