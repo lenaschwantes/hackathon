@@ -1,0 +1,42 @@
+[
+  {
+    "nome": "Técnico em Informática Integrado ao Ensino Médio — Florianópolis",
+    "prazo_inicio": "15/06/2026",
+    "prazo_fim": "25/07/2026",
+    "link_inscricao": "https://ifsc.edu.br/editais/2026-tecnico-integrado-informatica-florianopolis",
+    "forma_ingresso": "sorteio",
+    "link_pdf": "https://ifsc.edu.br/editais/2026-tecnico-integrado-informatica-florianopolis"
+  },
+  {
+    "nome": "FIC Auxiliar Administrativo — Criciúma",
+    "prazo_inicio": "05/07/2026",
+    "prazo_fim": "30/07/2026",
+    "link_inscricao": "https://ifsc.edu.br/editais/2026-fic-auxiliar-administrativo-ead",
+    "forma_ingresso": "análise",
+    "link_pdf": "https://ifsc.edu.br/editais/2026-fic-auxiliar-administrativo-ead"
+  },
+  {
+    "nome": "FIC Informática Básica — Canoinhas",
+    "prazo_inicio": "15/07/2026",
+    "prazo_fim": "25/07/2026",
+    "link_inscricao": "https://ifsc.edu.br/editais/2026-fic-informatica-basica-canoinhas",
+    "forma_ingresso": "análise",
+    "link_pdf": "https://ifsc.edu.br/editais/2026-fic-informatica-basica-canoinhas"
+  },
+  {
+    "nome": "Técnico em Agropecuária Subsequente — Caçador",
+    "prazo_inicio": "25/06/2026",
+    "prazo_fim": "01/08/2026",
+    "link_inscricao": "https://ifsc.edu.br/editais/2026-tecnico-subsequente-agropecuaria-cacador",
+    "forma_ingresso": "ENEM",
+    "link_pdf": "https://ifsc.edu.br/editais/2026-tecnico-subsequente-agropecuaria-cacador"
+  },
+  {
+    "nome": "FIC Libras Básico — Palhoça",
+    "prazo_inicio": "20/07/2026",
+    "prazo_fim": "05/08/2026",
+    "link_inscricao": "https://ifsc.edu.br/editais/2026-fic-libras-basico-ead",
+    "forma_ingresso": "análise",
+    "link_pdf": "https://ifsc.edu.br/editais/2026-fic-libras-basico-ead"
+  }
+]

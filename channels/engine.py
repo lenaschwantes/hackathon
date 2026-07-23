@@ -22,11 +22,22 @@ import anthropic
 from config.prompts import PROMPT_COLETA, PROMPT_CONVERSA, PROMPT_CONFIRMACAO_REINICIO
 from config.settings import settings
 from dialogue.intent import precisa_busca
+from dialogue.editais_catalogo import buscar_edital_por_indice, carregar_editais_abertos
 from dialogue.onboarding import (
     CALLBACK_INICIO_BUSCAR,
     CALLBACK_INICIO_DUVIDA,
+    CALLBACK_DUVIDA_GUIA_CURSOS,
+    CALLBACK_DUVIDA_PRAZOS,
+    CALLBACK_DUVIDA_PERGUNTA_LIVRE,
+    CALLBACK_EDITAL_VER_OUTRO,
+    CALLBACK_EDITAL_ENCERRAR,
     TEXTO_SINTETICO_BUSCAR_CURSO,
     TEXTO_SINTETICO_TENHO_DUVIDA,
+    TEXTO_SINTETICO_GUIA_CURSOS,
+    TEXTO_SINTETICO_DUVIDA_PRAZOS,
+    TEXTO_SINTETICO_PERGUNTA_LIVRE,
+    TEXTO_SINTETICO_VER_OUTRO_EDITAL,
+    TEXTO_SINTETICO_ENCERRAR_DUVIDA,
 )
 from dialogue.profile import (
     OPCOES_ALCANCE,
@@ -130,10 +141,54 @@ _MENSAGEM_MENU_INICIAL = (
     "institutos federais e a entender editais do IFSC. Como posso te ajudar agora?"
 )
 
+_MENSAGEM_MENU_DUVIDA = "Sobre o que você quer saber?"
+
 _MENSAGEM_CONVITE_DUVIDA = (
     "Pode perguntar! Sobre prazo, documento, requisito, o que for -- é só "
     "mandar. E se quiser uma recomendação de curso mais pra frente, também é só pedir."
 )
+
+_BOTOES_DUVIDA: list[list[Botao]] = [
+    [Botao("Fazer uma pergunta", CALLBACK_DUVIDA_PERGUNTA_LIVRE)],
+    [Botao("Guia de cursos", CALLBACK_DUVIDA_GUIA_CURSOS)],
+    [Botao("Dúvidas sobre prazos e formas de ingresso", CALLBACK_DUVIDA_PRAZOS)],
+]
+
+_MENSAGEM_GUIA_CURSOS = (
+    "Aqui está o link com a guia de cursos disponíveis no IFSC: "
+    "https://www.ifsc.edu.br/cursos"
+)
+
+_BOTOES_POS_EDITAL: list[list[Botao]] = [
+    [Botao("Ver outro edital", CALLBACK_EDITAL_VER_OUTRO)],
+    [Botao("Encerrar", CALLBACK_EDITAL_ENCERRAR)],
+]
+
+_MENSAGEM_ENCERRAMENTO_DUVIDA = "Tudo bem! Se precisar de mais alguma coisa, é só chamar."
+
+
+def _botoes_lista_editais(editais: list[dict]) -> list[list[Botao]]:
+    """Um botão por edital aberto, rótulo = nome real (nunca número).
+    callback_data usa o índice na lista carregada agora."""
+    return [[Botao(edital["nome"], f"edital:{i}")] for i, edital in enumerate(editais)]
+
+
+def _mensagem_lista_editais() -> tuple[str, list[list[Botao]]]:
+    editais = carregar_editais_abertos()
+    if not editais:
+        return "No momento não há nenhum edital aberto cadastrado.", []
+    return "Qual edital você quer consultar?", _botoes_lista_editais(editais)
+
+
+def _formatar_detalhe_edital(edital: dict) -> str:
+    return (
+        f"📅 Prazo de inscrição: {edital['prazo_inicio']} a {edital['prazo_fim']}\n"
+        f"🔗 Link para inscrição: {edital['link_inscricao']}\n"
+        f"📋 Forma de ingresso: {edital['forma_ingresso']}\n"
+        f"📄 Edital completo: {edital['link_pdf']}\n\n"
+        "Quer ver outro edital ou posso ajudar em algo mais?"
+    )
+
 
 _MENSAGEM_FALLBACK = (
     "Desculpa, tive um problema pra buscar essa informação agora. "
@@ -314,6 +369,7 @@ def responder(
     nivel_escolhido: str | None = None,
     escolaridade_escolhida: str | None = None,
     alcance_escolhido: str | None = None,
+    edital_indice_escolhido: int | None = None,
 ) -> str:
     """
     Recebe o id do usuário, o texto que ele mandou, e a sessão atual.
@@ -328,6 +384,13 @@ def responder(
     então também pulam os blocos de reinício abaixo
     (`classificar_pedido_reinicio` custaria uma chamada paga à toa nesse
     caso).
+
+    `edital_indice_escolhido` é preenchido só quando a origem foi um
+    toque num botão de edital específico (dentro do sub-menu "Dúvidas
+    sobre prazos e formas de ingresso") -- resolvido logo no início,
+    antes de qualquer outro roteamento, e não depende de `fase_dialogo`
+    estar em nenhum valor específico (mesma filosofia dos outros
+    parâmetros de botão).
 
     Antes de qualquer outra coisa, verifica se há um pedido de
     reinício em andamento (`fase_dialogo == "confirmando_reinicio"`)
@@ -346,11 +409,18 @@ def responder(
     (`fase_dialogo` vira "conversa_livre" -- perfil fica vazio, toda
     mensagem futura é tratada como candidata a RAG); pedido de
     recomendação (texto livre ou botão) entra na coleta normal
-    (`fase_dialogo` vira "coletando"); qualquer outra coisa (saudação,
-    texto ambíguo) mostra um menu com botões. Alguém em "conversa_livre"
-    que depois pede uma recomendação (`quer_nova_recomendacao`) migra
-    pra coleta na hora, mesmo com o perfil ainda vazio -- nunca fica
-    sem essa saída.
+    (`fase_dialogo` vira "coletando"); "tenho uma dúvida" mostra o
+    sub-menu (guia de cursos / prazos e formas de ingresso,
+    `fase_dialogo` vira "menu_duvida"); qualquer outra coisa (saudação,
+    texto ambíguo) mostra o menu inicial com botões. O sub-menu de
+    dúvida ("menu_duvida"/"selecionando_edital") tem sua própria lógica
+    de navegação: guia de cursos responde direto e volta pra
+    "conversa_livre"; prazos mostra a lista de editais abertos
+    ("selecionando_edital"); escolher um edital (via
+    `edital_indice_escolhido`) mostra o detalhe formatado com botões de
+    "ver outro"/"encerrar". Alguém em "conversa_livre" que depois pede
+    uma recomendação (`quer_nova_recomendacao`) migra pra coleta na
+    hora, mesmo com o perfil ainda vazio -- nunca fica sem essa saída.
 
     Se o perfil ainda não estiver completo (e não estiver em
     "conversa_livre"), extrai o que der da mensagem (com o histórico
@@ -393,6 +463,16 @@ def responder(
             return Resposta(_MENSAGEM_FALLBACK_CONFIRMACAO_REINICIO, botoes=_BOTOES_REINICIO)
         return Resposta(pergunta, botoes=_BOTOES_REINICIO)
 
+    # Seleção de edital específico no sub-menu de dúvidas: resolvida
+    # logo no início, como os demais parâmetros de botão (nivel_
+    # escolhido/escolaridade_escolhida/alcance_escolhido) -- não
+    # depende de fase_dialogo estar em nenhum valor específico.
+    if edital_indice_escolhido is not None:
+        edital = buscar_edital_por_indice(edital_indice_escolhido)
+        if edital is None:
+            return _MENSAGEM_FALLBACK
+        return Resposta(_formatar_detalhe_edital(edital), botoes=_BOTOES_POS_EDITAL)
+
     if nivel_escolhido is None and escolaridade_escolhida is None and alcance_escolhido is None:
         # Reinício: verificado antes de qualquer outra coisa, pois pode
         # ser pedido em qualquer ponto da conversa.
@@ -412,6 +492,30 @@ def responder(
                 # existir).
                 sessao["fase_dialogo"] = sessao.pop("fase_dialogo_anterior", "completo")
                 return "Sem problema, mantive seus dados como estavam."
+
+        # Sub-menu "Tenho uma dúvida": guia de cursos responde direto
+        # (sem sub-menu); prazos mostra a lista de editais abertos.
+        if sessao.get("fase_dialogo") == "menu_duvida":
+            if texto == TEXTO_SINTETICO_PERGUNTA_LIVRE:
+                sessao["fase_dialogo"] = "conversa_livre"
+                return _MENSAGEM_CONVITE_DUVIDA
+            if texto == TEXTO_SINTETICO_GUIA_CURSOS:
+                sessao["fase_dialogo"] = "conversa_livre"
+                return _MENSAGEM_GUIA_CURSOS
+            if texto == TEXTO_SINTETICO_DUVIDA_PRAZOS:
+                sessao["fase_dialogo"] = "selecionando_edital"
+                mensagem, botoes = _mensagem_lista_editais()
+                return Resposta(mensagem, botoes=botoes) if botoes else mensagem
+
+        # Navegação pós-detalhe de edital: ver outro (mostra a lista de
+        # novo) ou encerrar (volta pra conversa livre).
+        if sessao.get("fase_dialogo") == "selecionando_edital":
+            if texto == TEXTO_SINTETICO_VER_OUTRO_EDITAL:
+                mensagem, botoes = _mensagem_lista_editais()
+                return Resposta(mensagem, botoes=botoes) if botoes else mensagem
+            if texto == TEXTO_SINTETICO_ENCERRAR_DUVIDA:
+                sessao["fase_dialogo"] = "conversa_livre"
+                return _MENSAGEM_ENCERRAMENTO_DUVIDA
 
         # So considera pedido de reinicio com o perfil ja completo.
         # "buscar outra area" (trocar de area preservando cidade/
@@ -467,8 +571,8 @@ def responder(
         # nenhum classificador novo).
         if sessao.get("fase_dialogo") == "inicio":
             if texto == TEXTO_SINTETICO_TENHO_DUVIDA:
-                sessao["fase_dialogo"] = "conversa_livre"
-                return _MENSAGEM_CONVITE_DUVIDA
+                sessao["fase_dialogo"] = "menu_duvida"
+                return Resposta(_MENSAGEM_MENU_DUVIDA, botoes=_BOTOES_DUVIDA)
 
             quer_recomendacao = texto == TEXTO_SINTETICO_BUSCAR_CURSO or quer_nova_recomendacao(texto)
             if quer_recomendacao:
